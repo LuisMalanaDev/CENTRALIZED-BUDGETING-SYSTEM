@@ -7,8 +7,6 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
-  TextInput,
-  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -30,15 +28,6 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
   const [orders, setOrders] = useState<TrackerOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
-
-  // New parcel modal state
-  const [platform, setPlatform] = useState<'SHOPEE' | 'LAZADA' | 'GROCERY' | 'OTHER'>('SHOPEE');
-  const [merchant, setMerchant] = useState('');
-  const [items, setItems] = useState('');
-  const [amount, setAmount] = useState('');
-  const [trackingNumber, setTrackingNumber] = useState('');
-  const [submitting, setSubmitting] = useState(false);
 
   const currencySymbol = user?.currency === 'USD' ? '$' : '₱';
 
@@ -69,33 +58,6 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
     fetchOrders();
   };
 
-  const handleAddOrder = async () => {
-    const parsedAmount = parseFloat(amount.replace(/,/g, '')) || 0;
-    setSubmitting(true);
-    try {
-      await api.post('/api/tracker', {
-        platform,
-        merchant: merchant.trim() || platform,
-        items: items.trim() || 'Online Order',
-        amount: parsedAmount,
-        trackingNumber: trackingNumber.trim() || undefined,
-        status: 'TO_SHIP',
-        orderDate: new Date().toISOString(),
-      });
-
-      setMerchant('');
-      setItems('');
-      setAmount('');
-      setTrackingNumber('');
-      setModalVisible(false);
-      fetchOrders();
-    } catch (err) {
-      console.warn('Failed to add order:', err);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const totalSpent = orders.reduce((acc, o) => acc + (o.amount || 0), 0);
   const inTransitCount = orders.filter((o) => o.status === 'IN_TRANSIT' || o.status === 'TO_SHIP').length;
 
@@ -113,14 +75,14 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
     >
       {/* Title */}
       <View style={styles.header}>
-        <Text style={styles.title}>Shopee & Grocery Tracker</Text>
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => setModalVisible(true)}
-        >
-          <Ionicons name="add" size={16} color={Colors.black} />
-          <Text style={styles.addBtnText}>+ Parcel</Text>
-        </TouchableOpacity>
+        <View>
+          <Text style={styles.title}>Orders & Delivery Tracker</Text>
+          <Text style={styles.headerSub}>Auto-synced from your emails</Text>
+        </View>
+        <View style={styles.autoSyncPill}>
+          <View style={styles.autoSyncDot} />
+          <Text style={styles.autoSyncText}>Auto-Sync Live</Text>
+        </View>
       </View>
 
       {/* Hero Stats */}
@@ -199,90 +161,6 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
           ))}
         </View>
       )}
-
-      {/* Add Parcel Modal */}
-      <Modal visible={modalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Package / Grocery</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={20} color={Colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalForm}>
-              {/* Platform Selector */}
-              <View style={styles.platformRow}>
-                {(['SHOPEE', 'LAZADA', 'GROCERY', 'OTHER'] as const).map((p) => (
-                  <TouchableOpacity
-                    key={p}
-                    style={[
-                      styles.platformPill,
-                      platform === p && styles.platformPillActive,
-                    ]}
-                    onPress={() => setPlatform(p)}
-                  >
-                    <Text
-                      style={[
-                        styles.platformPillText,
-                        platform === p && styles.platformPillTextActive,
-                      ]}
-                    >
-                      {p}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <TextInput
-                style={styles.input}
-                placeholder="Items / Description (e.g. Wireless Mouse)"
-                placeholderTextColor={Colors.textMuted}
-                value={items}
-                onChangeText={setItems}
-              />
-
-              <TextInput
-                style={styles.input}
-                placeholder="Merchant / Store Name"
-                placeholderTextColor={Colors.textMuted}
-                value={merchant}
-                onChangeText={setMerchant}
-              />
-
-              <TextInput
-                style={styles.input}
-                placeholder="Amount (₱)"
-                placeholderTextColor={Colors.textMuted}
-                keyboardType="decimal-pad"
-                value={amount}
-                onChangeText={setAmount}
-              />
-
-              <TextInput
-                style={styles.input}
-                placeholder="Tracking # (Optional)"
-                placeholderTextColor={Colors.textMuted}
-                value={trackingNumber}
-                onChangeText={setTrackingNumber}
-              />
-
-              <TouchableOpacity
-                style={styles.submitBtn}
-                onPress={handleAddOrder}
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <ActivityIndicator color={Colors.black} />
-                ) : (
-                  <Text style={styles.submitBtnText}>Add to Tracker</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 };
@@ -309,19 +187,32 @@ const styles = StyleSheet.create({
     color: Colors.white,
     letterSpacing: -0.4,
   },
-  addBtn: {
+  headerSub: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  autoSyncPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.white,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    gap: 4,
+    gap: 6,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
   },
-  addBtnText: {
-    fontSize: 12,
+  autoSyncDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  autoSyncText: {
+    fontSize: 11,
     fontWeight: '700',
-    color: Colors.black,
+    color: '#10B981',
   },
   heroRow: {
     flexDirection: 'row',
@@ -438,80 +329,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: Colors.white,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 20,
-    paddingBottom: 36,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.white,
-  },
-  modalForm: {
-    gap: 12,
-  },
-  platformRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  platformPill: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 8,
-    backgroundColor: Colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  platformPillActive: {
-    backgroundColor: Colors.white,
-    borderColor: Colors.white,
-  },
-  platformPillText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-  },
-  platformPillTextActive: {
-    color: Colors.black,
-  },
-  input: {
-    backgroundColor: Colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: Colors.white,
-  },
-  submitBtn: {
-    backgroundColor: Colors.white,
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  submitBtnText: {
-    color: Colors.black,
-    fontSize: 14,
-    fontWeight: '700',
   },
 });
