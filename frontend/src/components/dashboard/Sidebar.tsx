@@ -23,8 +23,8 @@ export function Sidebar({ onOpenQuickAdd }: SidebarProps) {
 
   const navItems = [
     { href: '/dashboard', label: 'Admin Overview', icon: LayoutDashboard },
-    { href: '/dashboard#users', label: "Users Directory", icon: Users, badge: 'Live' },
-    { href: '/dashboard#analytics', label: 'System Analytics', icon: BarChart3 },
+    { href: '/dashboard/users', label: "Users Directory", icon: Users, badge: 'Live' },
+    { href: '/dashboard/analytics', label: 'System Analytics', icon: BarChart3 },
   ];
 
   return (

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import {
@@ -15,6 +16,9 @@ import {
   CheckCircle2,
   Activity,
   RefreshCw,
+  ArrowRight,
+  BarChart3,
+  LayoutDashboard,
 } from 'lucide-react';
 
 interface AdminSummary {
@@ -134,6 +138,35 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
+      {/* Quick Navigation Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <span className="text-xs font-bold text-neutral-400 uppercase tracking-wider mr-1">Navigation:</span>
+        <Link
+          href="/dashboard"
+          className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-neutral-900 text-white dark:bg-white dark:text-black shadow-sm flex items-center gap-1.5"
+        >
+          <LayoutDashboard className="w-3.5 h-3.5" />
+          <span>Admin Overview</span>
+        </Link>
+        <Link
+          href="/dashboard/users"
+          className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors flex items-center gap-1.5"
+        >
+          <Users className="w-3.5 h-3.5" />
+          <span>Users Directory</span>
+          <span className="text-[9px] font-mono px-1 py-0.2 rounded border border-neutral-200 dark:border-neutral-800 text-emerald-600 dark:text-emerald-400 font-bold">
+            Live
+          </span>
+        </Link>
+        <Link
+          href="/dashboard/analytics"
+          className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors flex items-center gap-1.5"
+        >
+          <BarChart3 className="w-3.5 h-3.5" />
+          <span>System Analytics</span>
+        </Link>
+      </div>
+
       {/* 4 Top KPI Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Users */}
@@ -205,10 +238,19 @@ export default function AdminDashboardPage() {
       <div id="users" className="p-6 rounded-3xl bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 shadow-sm space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h2 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
-              <Users className="w-5 h-5 text-neutral-900 dark:text-white" />
-              <span>Admin&apos;s Users Directory</span>
-            </h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                <Users className="w-5 h-5 text-neutral-900 dark:text-white" />
+                <span>Admin&apos;s Users Directory</span>
+              </h2>
+              <Link
+                href="/dashboard/users"
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-neutral-500 hover:text-black dark:hover:text-white transition-colors"
+              >
+                <span>Full Page</span>
+                <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
               Overview of all registered users (girlfriend, friends, family, and accounts).
             </p>
@@ -321,7 +363,29 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* SECTION: Platform Analytics & Payment Methods Breakdown */}
-      <div id="analytics" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div id="analytics" className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-neutral-900 dark:text-white" />
+                <span>System & Platform Analytics</span>
+              </h2>
+              <Link
+                href="/dashboard/analytics"
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-neutral-500 hover:text-black dark:hover:text-white transition-colors"
+              >
+                <span>Full Page</span>
+                <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+              Financial volume and distribution across payment rails and spending categories.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Payment Methods Breakdown */}
         <div className="p-6 rounded-3xl bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
@@ -412,6 +476,7 @@ export default function AdminDashboardPage() {
           )}
         </div>
       </div>
+    </div>
     </div>
   );
 }
