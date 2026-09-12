@@ -112,7 +112,7 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
           <Ionicons name="cube-outline" size={32} color={Colors.textMuted} />
           <Text style={styles.emptyText}>No packages tracked yet</Text>
           <Text style={styles.emptySubtext}>
-            Tap "+ Parcel" to log incoming Shopee orders, Lazada deliveries, or groceries.
+            Incoming online orders (Shopee, Lazada, etc.) automatically sync from your connected email receipts.
           </Text>
         </View>
       ) : (

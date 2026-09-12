@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { Colors } from '../constants/theme';
 import { api } from '../api/client';
 import { CategoryBudget, SavingsVault } from '../types';
+import { getCategoryName } from '../utils/format';
 
 export const BudgetsScreen: React.FC = () => {
   const { user } = useAuth();
@@ -49,7 +50,7 @@ export const BudgetsScreen: React.FC = () => {
     fetchData();
   };
 
-  const totalBudget = budgets.reduce((acc, b) => acc + (b.limit || 0), 0);
+  const totalBudget = budgets.reduce((acc, b) => acc + (b.limit ?? b.amount ?? 0), 0);
   const totalSpent = budgets.reduce((acc, b) => acc + (b.spent || 0), 0);
   const totalVaultsSaved = vaults.reduce((acc, v) => acc + (v.currentAmount || 0), 0);
 
@@ -131,11 +132,13 @@ export const BudgetsScreen: React.FC = () => {
           ) : (
             <View style={styles.cardsList}>
               {budgets.map((b) => {
-                const percent = Math.min(100, Math.round(((b.spent || 0) / (b.limit || 1)) * 100));
+                const capLimit = b.limit ?? b.amount ?? 0;
+                const percent = Math.min(100, Math.round(((b.spent || 0) / (capLimit || 1)) * 100));
+                const catName = getCategoryName(b.category, b.name || 'Budget Cap');
                 return (
                   <View key={b.id} style={styles.budgetCard}>
                     <View style={styles.budgetTop}>
-                      <Text style={styles.budgetCat}>{b.category}</Text>
+                      <Text style={styles.budgetCat}>{catName}</Text>
                       <Text style={styles.budgetPercent}>{percent}%</Text>
                     </View>
 
@@ -151,7 +154,7 @@ export const BudgetsScreen: React.FC = () => {
                       </Text>
                       <Text style={styles.budgetLimit}>
                         Cap: {currencySymbol}
-                        {b.limit.toLocaleString()}
+                        {capLimit.toLocaleString()}
                       </Text>
                     </View>
                   </View>

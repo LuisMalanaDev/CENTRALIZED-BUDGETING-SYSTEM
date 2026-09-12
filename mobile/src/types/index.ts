@@ -9,15 +9,23 @@ export type TransactionType = 'EXPENSE' | 'INCOME' | 'TRANSFER';
 
 export type PaymentMethod = 'GCASH' | 'MAYA' | 'CASH' | 'BANK_TRANSFER' | 'CREDIT_CARD' | 'DEBIT_CARD';
 
+export interface Category {
+  id?: string;
+  name: string;
+  slug?: string;
+  color?: string;
+  icon?: string;
+}
+
 export interface Transaction {
   id: string;
   amount: number;
   type: TransactionType;
-  category: string;
+  category: string | Category;
   description?: string;
   date: string;
   paymentMethod: PaymentMethod | string;
-  account?: string;
+  account?: string | { id?: string; name: string; type?: string; color?: string };
   status?: string;
 }
 
@@ -31,8 +39,10 @@ export interface Account {
 
 export interface CategoryBudget {
   id: string;
-  category: string;
-  limit: number;
+  category?: string | Category;
+  name?: string;
+  limit?: number;
+  amount?: number;
   spent: number;
   period: string;
 }

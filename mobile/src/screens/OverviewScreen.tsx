@@ -17,6 +17,7 @@ import { Colors } from '../constants/theme';
 import { api } from '../api/client';
 import { DateFilterBar } from '../components/DateFilterBar';
 import { DateRangeFilter, Transaction, Account } from '../types';
+import { getCategoryName } from '../utils/format';
 
 interface OverviewScreenProps {
   onOpenQuickLog: () => void;
@@ -342,7 +343,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
 
                   <View style={styles.txDetails}>
                     <Text style={styles.txCategory} numberOfLines={1}>
-                      {tx.category || 'Expense'}
+                      {getCategoryName(tx.category, 'Expense')}
                     </Text>
                     <Text style={styles.txMeta} numberOfLines={1}>
                       {tx.description || tx.paymentMethod} • {formattedDate}

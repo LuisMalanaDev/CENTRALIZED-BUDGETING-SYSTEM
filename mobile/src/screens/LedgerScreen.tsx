@@ -15,6 +15,7 @@ import { Colors } from '../constants/theme';
 import { api } from '../api/client';
 import { DateFilterBar } from '../components/DateFilterBar';
 import { DateRangeFilter, Transaction } from '../types';
+import { getCategoryName } from '../utils/format';
 
 interface LedgerScreenProps {
   filter: DateRangeFilter;
@@ -70,7 +71,7 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
     // Search query
     if (search.trim()) {
       const q = search.toLowerCase();
-      const matchCat = tx.category?.toLowerCase().includes(q);
+      const matchCat = getCategoryName(tx.category, '').toLowerCase().includes(q);
       const matchDesc = tx.description?.toLowerCase().includes(q);
       const matchMethod = tx.paymentMethod?.toLowerCase().includes(q);
       return matchCat || matchDesc || matchMethod;
@@ -177,7 +178,7 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
                       color={Colors.white}
                     />
                     <Text style={styles.txCategoryText} numberOfLines={1}>
-                      {tx.category}
+                      {getCategoryName(tx.category)}
                     </Text>
                   </View>
 
