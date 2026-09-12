@@ -42,17 +42,19 @@ export class EmailParserService {
 
   private static parseShopeeEmail(subject: string, body: string, combined: string): ParsedTransactionDraft {
     // Extract Shopee Order ID / Tracking Number
-    // e.g.: "Order ID: 260912ABCXYZ" or "Order No. SPXPH260912A87X"
+    // e.g.: "Your COD order #26071817KKTTPP has been confirmed" or "Order ID: 260912ABCXYZ"
     const orderIdMatch =
-      combined.match(/(?:Order\s*(?:ID|Number|No\.?|Ref\.?))\s*[:#]?\s*([A-Za-z0-9_-]{8,30})/i) ||
-      combined.match(/(SPXPH[A-Za-z0-9]+)/i);
-    const trackingNumber = orderIdMatch ? orderIdMatch[1] : undefined;
+      combined.match(/(?:(?:COD\s*)?Order\s*(?:ID|Number|No\.?|Ref\.?)?)\s*[:#]\s*([A-Za-z0-9_-]{8,30})/i) ||
+      combined.match(/#([0-9]{8,15}[A-Z0-9]{4,15})/i) ||
+      combined.match(/(SPXPH[A-Za-z0-9]+)/i) ||
+      combined.match(/(?:Order\s*(?:ID|Number|No\.?|Ref\.?))\s*[:#]?\s*([A-Za-z0-9_-]{8,30})/i);
+    const trackingNumber = orderIdMatch ? (orderIdMatch[1].startsWith('#') ? orderIdMatch[1] : `#${orderIdMatch[1]}`) : undefined;
 
     // Extract Total Amount
     // e.g.: "Total Payment: ₱1,499.00" or "Order Total: PHP 1,499.00" or "Amount Paid: ₱2,350.00"
     const amountMatch =
       combined.match(/(?:Total\s*(?:Payment|Amount|Order Total|Price)|Amount\s*Paid|Total)\s*[:=]?\s*(?:₱|PHP|Php)?\s*([\d,]+\.?\d{0,2})/i) ||
-      combined.match(/(?:₱|PHP)\s*([\d,]+\.\d{2})/i);
+      combined.match(/(?:₱|PHP|Php)\s*([\d,]+\.?\d{0,2})/i);
 
     const amount = amountMatch ? this.extractNumeric(amountMatch[1]) : 0;
 

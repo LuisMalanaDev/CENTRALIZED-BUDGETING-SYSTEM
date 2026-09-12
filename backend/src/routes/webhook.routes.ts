@@ -12,18 +12,29 @@ export async function webhookRoutes(fastify: FastifyInstance) {
     const query = request.query as any;
     const body = (request.body as InboundEmailPayload) || {};
 
-    // 1. Identify User from query token or recipient address
-    let targetUserId = query.token || '';
+    // 1. Identify User from query token/email or recipient address
+    let targetUserId = query.token || query.userId || query.email || body.token || (body as any).userId || '';
 
     if (!targetUserId && body.to) {
-      // e.g. orders+user-123@inbound.wealthsync.io
-      const match = body.to.match(/orders\+([a-zA-Z0-9_-]+)@/i);
+      // e.g. orders+user-123@inbound.wealthsync.io or orders+luis@inbound.wealthsync.io
+      const match = body.to.match(/orders\+([a-zA-Z0-9_.-]+)@/i);
       if (match) {
         targetUserId = match[1];
       }
     }
 
-    // If still not identified in dev, default to first user or demo user
+    // If targetUserId is an email address, lookup the real user id
+    if (targetUserId && targetUserId.includes('@')) {
+      const userByEmail = await dbSafe(
+        () => prisma.user.findUnique({ where: { email: targetUserId.toLowerCase() } }),
+        () => mockStore.users.find((u) => u.email.toLowerCase() === targetUserId.toLowerCase())
+      );
+      if (userByEmail) {
+        targetUserId = userByEmail.id;
+      }
+    }
+
+    // Fallback: If still not identified, default to first user
     if (!targetUserId) {
       targetUserId = await dbSafe(
         async () => {
