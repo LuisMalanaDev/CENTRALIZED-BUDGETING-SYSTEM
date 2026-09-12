@@ -13,6 +13,7 @@ import { analyticsRoutes } from './routes/analytics.routes.js';
 import { webhookRoutes } from './routes/webhook.routes.js';
 import { adminRoutes } from './routes/admin.routes.js';
 import { trackerRoutes } from './routes/tracker.routes.js';
+import { ocrRoutes } from './routes/ocr.routes.js';
 import { prisma } from './prisma.js';
 
 dotenv.config();
@@ -80,6 +81,7 @@ async function main() {
   await server.register(webhookRoutes, { prefix: '/api/webhooks' });
   await server.register(adminRoutes, { prefix: '/api/admin' });
   await server.register(trackerRoutes, { prefix: '/api/tracker' });
+  await server.register(ocrRoutes, { prefix: '/api/ocr' });
 
   // Error handler
   server.setErrorHandler((error: any, request, reply) => {

@@ -10,8 +10,10 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../constants/theme';
 import { api } from '../api/client';
 import { PaymentMethod, TransactionType } from '../types';
@@ -63,8 +65,156 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState<{
+    type: 'success' | 'warning' | 'info';
+    message: string;
+  } | null>(null);
 
   const categories = type === 'EXPENSE' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+
+  const handleClose = () => {
+    setScanFeedback(null);
+    setError(null);
+    onClose();
+  };
+
+  const processReceiptScan = async (source: 'camera' | 'gallery') => {
+    setError(null);
+    setScanFeedback(null);
+
+    try {
+      if (source === 'camera') {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            'Camera Permission Needed',
+            'Please grant camera permission to scan physical receipts.'
+          );
+          return;
+        }
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            'Gallery Permission Needed',
+            'Please grant gallery permission to select a receipt image.'
+          );
+          return;
+        }
+      }
+
+      const result =
+        source === 'camera'
+          ? await ImagePicker.launchCameraAsync({
+              mediaTypes: ['images'],
+              allowsEditing: true,
+              quality: 0.6,
+              base64: true,
+            })
+          : await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ['images'],
+              allowsEditing: true,
+              quality: 0.6,
+              base64: true,
+            });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      if (!asset.base64) {
+        setError('Unable to read receipt image data. Please try another photo.');
+        return;
+      }
+
+      setScanning(true);
+
+      const res = await api.post<{
+        success: boolean;
+        amount: number | null;
+        merchant: string | null;
+        category: string;
+        paymentMethod: PaymentMethod;
+        notes?: string;
+      }>('/api/ocr/scan-receipt', {
+        imageBase64: asset.base64,
+      });
+
+      // Always switch to EXPENSE for paper receipts
+      setType('EXPENSE');
+
+      if (res.amount) {
+        setAmount(res.amount.toFixed(2));
+      }
+
+      if (res.merchant) {
+        setDescription(res.merchant);
+      }
+
+      // Match category
+      const catLower = (res.category || '').toLowerCase();
+      if (catLower.includes('food') || catLower.includes('dining')) {
+        setCategory('Food & Dining');
+      } else if (catLower.includes('grocer') || catLower.includes('supermarket')) {
+        setCategory('Groceries');
+      } else if (
+        catLower.includes('transport') ||
+        catLower.includes('petron') ||
+        catLower.includes('shell') ||
+        catLower.includes('gas') ||
+        catLower.includes('fuel')
+      ) {
+        setCategory('Transportation');
+      } else if (catLower.includes('shopee') || catLower.includes('online')) {
+        setCategory('Shopee / Online');
+      } else if (catLower.includes('bill') || catLower.includes('utilit')) {
+        setCategory('Bills & Utilities');
+      } else if (catLower.includes('entertain') || catLower.includes('game')) {
+        setCategory('Entertainment');
+      }
+
+      // Match payment method
+      if (
+        res.paymentMethod &&
+        ['GCASH', 'MAYA', 'CASH', 'CREDIT_CARD', 'BANK_TRANSFER'].includes(res.paymentMethod)
+      ) {
+        setPaymentMethod(res.paymentMethod as PaymentMethod);
+      }
+
+      // Feedback display
+      if (res.success && res.amount && res.merchant) {
+        setScanFeedback({
+          type: 'success',
+          message: `Scanned: ${res.merchant} · ₱${res.amount.toFixed(2)} · ${res.paymentMethod || 'Cash'}`,
+        });
+      } else if (res.amount) {
+        setScanFeedback({
+          type: 'success',
+          message: `Amount detected: ₱${res.amount.toFixed(2)}. Verify merchant below.`,
+        });
+      } else if (res.merchant) {
+        setScanFeedback({
+          type: 'info',
+          message: `Merchant detected: ${res.merchant}. Please enter the total amount.`,
+        });
+      } else {
+        setScanFeedback({
+          type: 'warning',
+          message: 'Receipt text was unclear. Please check or fill in details below.',
+        });
+      }
+    } catch (err: any) {
+      console.warn('Receipt scan error:', err);
+      setScanFeedback({
+        type: 'warning',
+        message: 'Could not scan receipt. Please enter details manually.',
+      });
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setError(null);
@@ -88,6 +238,7 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({
       // Reset form
       setAmount('');
       setDescription('');
+      setScanFeedback(null);
       onSuccess();
       onClose();
     } catch (err: any) {
@@ -102,7 +253,7 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({
       visible={visible}
       transparent
       animationType="slide"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <KeyboardAvoidingView
         style={styles.overlay}
@@ -112,7 +263,7 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.headerTitle}>Quick Log Transaction</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
               <Ionicons name="close" size={22} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
@@ -163,6 +314,82 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {/* AI Receipt Scanner Card (Expense Only) */}
+            {type === 'EXPENSE' && (
+              <View style={styles.ocrCard}>
+                <View style={styles.ocrHeader}>
+                  <View style={styles.ocrHeaderLeft}>
+                    <View style={styles.ocrIconCircle}>
+                      <Ionicons name="scan" size={15} color={Colors.white} />
+                    </View>
+                    <View>
+                      <Text style={styles.ocrTitle}>Scan Paper Receipt</Text>
+                      <Text style={styles.ocrSubtitle}>Auto-fills merchant, total & category</Text>
+                    </View>
+                  </View>
+                  <View style={styles.aiBadge}>
+                    <Text style={styles.aiBadgeText}>AI OCR</Text>
+                  </View>
+                </View>
+
+                {scanning ? (
+                  <View style={styles.ocrLoadingRow}>
+                    <ActivityIndicator size="small" color={Colors.white} />
+                    <Text style={styles.ocrLoadingText}>Scanning receipt with OCR...</Text>
+                  </View>
+                ) : (
+                  <View style={styles.ocrActionsRow}>
+                    <TouchableOpacity
+                      style={styles.ocrBtn}
+                      onPress={() => processReceiptScan('camera')}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="camera" size={16} color={Colors.white} />
+                      <Text style={styles.ocrBtnText}>Camera</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.ocrBtnSecondary}
+                      onPress={() => processReceiptScan('gallery')}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="images" size={16} color={Colors.textSecondary} />
+                      <Text style={styles.ocrBtnSecondaryText}>Upload</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {scanFeedback && (
+                  <View
+                    style={[
+                      styles.ocrFeedbackBox,
+                      scanFeedback.type === 'success' && styles.ocrFeedbackSuccess,
+                      scanFeedback.type === 'warning' && styles.ocrFeedbackWarning,
+                    ]}
+                  >
+                    <Ionicons
+                      name={
+                        scanFeedback.type === 'success'
+                          ? 'checkmark-circle'
+                          : 'alert-circle'
+                      }
+                      size={16}
+                      color={scanFeedback.type === 'success' ? '#4ADE80' : '#FBBF24'}
+                    />
+                    <Text
+                      style={[
+                        styles.ocrFeedbackText,
+                        scanFeedback.type === 'success' && { color: '#4ADE80' },
+                        scanFeedback.type === 'warning' && { color: '#FBBF24' },
+                      ]}
+                    >
+                      {scanFeedback.message}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* Error Message */}
             {error && (
@@ -463,5 +690,133 @@ const styles = StyleSheet.create({
     color: Colors.black,
     fontSize: 16,
     fontWeight: '700',
+  },
+  ocrCard: {
+    backgroundColor: Colors.surfaceCard,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 14,
+    gap: 12,
+  },
+  ocrHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  ocrHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  ocrIconCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: Colors.badgeBg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ocrTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  ocrSubtitle: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 1,
+  },
+  aiBadge: {
+    backgroundColor: Colors.badgeBg,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  aiBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+    letterSpacing: 0.5,
+  },
+  ocrActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  ocrBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.badgeBg,
+    borderWidth: 1,
+    borderColor: Colors.borderFocus,
+    borderRadius: 10,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  ocrBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  ocrBtnSecondary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  ocrBtnSecondaryText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: Colors.textSecondary,
+  },
+  ocrLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    gap: 10,
+    backgroundColor: Colors.surfaceSubtle,
+    borderRadius: 10,
+  },
+  ocrLoadingText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
+  ocrFeedbackBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: Colors.surfaceSubtle,
+  },
+  ocrFeedbackSuccess: {
+    backgroundColor: '#052e16',
+    borderWidth: 1,
+    borderColor: '#14532d',
+  },
+  ocrFeedbackWarning: {
+    backgroundColor: '#2e1c05',
+    borderWidth: 1,
+    borderColor: '#533814',
+  },
+  ocrFeedbackText: {
+    fontSize: 12,
+    fontWeight: '500',
+    flex: 1,
   },
 });
