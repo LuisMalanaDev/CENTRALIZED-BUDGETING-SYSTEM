@@ -1,0 +1,29 @@
+databases:
+  - name: wealthsync-db
+    databaseName: wealthsync
+    user: wealthsync_user
+    plan: free
+
+services:
+  - type: web
+    name: wealthsync-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: wealthsync-db
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: JWT_SECRET
+        generateValue: true
+      - key: COOKIE_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        value: "*"
