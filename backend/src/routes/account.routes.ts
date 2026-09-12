@@ -64,4 +64,14 @@ export async function accountRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: err.message || 'Failed to delete account' });
     }
   });
+
+  // Reset all account balances to 0
+  fastify.post('/reset', async (request, reply) => {
+    try {
+      const result = await AccountService.resetBalances(request.user.userId);
+      return reply.send(result);
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message || 'Failed to reset balances' });
+    }
+  });
 }

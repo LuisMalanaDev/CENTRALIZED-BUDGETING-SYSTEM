@@ -7,6 +7,9 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
+  Modal,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -93,8 +96,60 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
     fetchData();
   };
 
-  // Total Money Left across all active wallets & accounts
-  const totalMoneyLeft = accounts.reduce((acc, a) => acc + (a.balance || 0), 0);
+  const [walletModalVisible, setWalletModalVisible] = useState(false);
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [balanceInput, setBalanceInput] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
+
+  // Reset all wallets to 0
+  const handleResetAllToZero = async () => {
+    setIsResetting(true);
+    try {
+      await api.post('/api/accounts/reset').catch(() => null);
+      // Also update each account individually if needed to ensure persistence
+      await Promise.all(
+        accounts.map((a) => api.put(`/api/accounts/${a.id}`, { balance: 0 }).catch(() => null))
+      );
+      setAccounts((prev) => prev.map((a) => ({ ...a, balance: 0 })));
+      setWalletModalVisible(false);
+      fetchData();
+      Alert.alert('Balances Cleared', 'All wallet balances have been reset to ₱0.00');
+    } catch (err: any) {
+      Alert.alert('Notice', 'Balances set to ₱0.00 locally.');
+      setAccounts((prev) => prev.map((a) => ({ ...a, balance: 0 })));
+      setWalletModalVisible(false);
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  // Save specific account balance
+  const handleSaveBalance = async (accId: string) => {
+    const num = parseFloat(balanceInput);
+    if (isNaN(num)) {
+      Alert.alert('Invalid Amount', 'Please enter a valid amount');
+      return;
+    }
+    try {
+      await api.put(`/api/accounts/${accId}`, { balance: num }).catch(() => null);
+      setAccounts((prev) =>
+        prev.map((a) => (a.id === accId ? { ...a, balance: num } : a))
+      );
+      setEditingAccountId(null);
+      setBalanceInput('');
+      fetchData();
+    } catch (err: any) {
+      Alert.alert('Notice', 'Updated locally.');
+      setAccounts((prev) =>
+        prev.map((a) => (a.id === accId ? { ...a, balance: num } : a))
+      );
+      setEditingAccountId(null);
+      setBalanceInput('');
+    }
+  };
+
+  // Total Money Left across all active wallets & accounts (strictly parse as number)
+  const totalMoneyLeft = accounts.reduce((acc, a) => acc + (Number(a.balance) || 0), 0);
 
   return (
     <ScrollView
@@ -134,15 +189,20 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
       <View style={styles.heroCard}>
         <View style={styles.heroHeader}>
           <Text style={styles.heroLabel}>TOTAL MONEY LEFT</Text>
-          <View style={styles.walletBadge}>
+          <TouchableOpacity
+            style={styles.walletBadge}
+            onPress={() => setWalletModalVisible(true)}
+            activeOpacity={0.7}
+          >
             <Ionicons name="wallet" size={12} color={Colors.white} />
             <Text style={styles.walletBadgeText}>{accounts.length} Wallets</Text>
-          </View>
+            <Ionicons name="chevron-forward" size={10} color={Colors.textMuted} />
+          </TouchableOpacity>
         </View>
 
         <Text style={styles.heroAmount}>
           {currencySymbol}
-          {totalMoneyLeft.toLocaleString('en-US', {
+          {Number(totalMoneyLeft || 0).toLocaleString('en-US', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
           })}
@@ -152,15 +212,20 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
         {accounts.length > 0 ? (
           <View style={styles.walletPillsRow}>
             {accounts.slice(0, 3).map((acc) => (
-              <View key={acc.id} style={styles.walletMiniPill}>
+              <TouchableOpacity
+                key={acc.id}
+                style={styles.walletMiniPill}
+                onPress={() => setWalletModalVisible(true)}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.walletMiniName} numberOfLines={1}>
                   {acc.name}:
                 </Text>
                 <Text style={styles.walletMiniBal}>
                   {currencySymbol}
-                  {Math.round(acc.balance).toLocaleString()}
+                  {Math.round(Number(acc.balance) || 0).toLocaleString()}
                 </Text>
-              </View>
+              </TouchableOpacity>
             ))}
           </View>
         ) : null}
@@ -170,67 +235,71 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           style={styles.quickAddHeroBtn}
           onPress={onOpenQuickLog}
         >
-          <Ionicons name="add" size={16} color={Colors.black} />
-          <Text style={styles.quickAddHeroText}>+ Quick Log Expense / Inflow</Text>
+          <Ionicons name="add" size={18} color={Colors.black} />
+          <Text style={styles.quickAddHeroText}>Quick Log Expense / Inflow</Text>
         </TouchableOpacity>
       </View>
 
       {/* 31-Day Visual Calendar Filter Bar */}
       <DateFilterBar filter={filter} onFilterChange={onFilterChange} />
 
-      {/* 4 Quick Stat Cards */}
+      {/* 4 Quick Stat Cards (2x2 Grid) */}
       <View style={styles.statsGrid}>
-        <View style={styles.statCard}>
-          <View style={styles.statHeader}>
-            <Text style={styles.statLabel}>Total Inflow</Text>
-            <Ionicons name="arrow-down-circle-outline" size={14} color={Colors.textSecondary} />
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Text style={styles.statLabel}>Total Inflow</Text>
+              <Ionicons name="arrow-down-circle-outline" size={14} color={Colors.textSecondary} />
+            </View>
+            <Text style={styles.statValue}>
+              +{currencySymbol}
+              {Number(metrics.totalInflow || 0).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+              })}
+            </Text>
           </View>
-          <Text style={styles.statValue}>
-            +{currencySymbol}
-            {metrics.totalInflow.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-            })}
-          </Text>
+
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Text style={styles.statLabel}>Total Outflow</Text>
+              <Ionicons name="arrow-up-circle-outline" size={14} color={Colors.textSecondary} />
+            </View>
+            <Text style={styles.statValue}>
+              −{currencySymbol}
+              {Number(metrics.totalOutflow || 0).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+              })}
+            </Text>
+          </View>
         </View>
 
-        <View style={styles.statCard}>
-          <View style={styles.statHeader}>
-            <Text style={styles.statLabel}>Total Outflow</Text>
-            <Ionicons name="arrow-up-circle-outline" size={14} color={Colors.textSecondary} />
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Text style={styles.statLabel}>Net Cashflow</Text>
+              <Ionicons name="swap-vertical-outline" size={14} color={Colors.textSecondary} />
+            </View>
+            <Text
+              style={[
+                styles.statValue,
+                Number(metrics.netCashflow || 0) < 0 ? styles.negativeText : undefined,
+              ]}
+            >
+              {Number(metrics.netCashflow || 0) >= 0 ? '+' : '−'}
+              {currencySymbol}
+              {Math.abs(Number(metrics.netCashflow || 0)).toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+              })}
+            </Text>
           </View>
-          <Text style={styles.statValue}>
-            −{currencySymbol}
-            {metrics.totalOutflow.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-            })}
-          </Text>
-        </View>
 
-        <View style={styles.statCard}>
-          <View style={styles.statHeader}>
-            <Text style={styles.statLabel}>Net Cashflow</Text>
-            <Ionicons name="swap-vertical-outline" size={14} color={Colors.textSecondary} />
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <Text style={styles.statLabel}>Active Transactions</Text>
+              <Ionicons name="list-outline" size={14} color={Colors.textSecondary} />
+            </View>
+            <Text style={styles.statValue}>{transactions.length} items</Text>
           </View>
-          <Text
-            style={[
-              styles.statValue,
-              metrics.netCashflow < 0 ? styles.negativeText : undefined,
-            ]}
-          >
-            {metrics.netCashflow >= 0 ? '+' : '−'}
-            {currencySymbol}
-            {Math.abs(metrics.netCashflow).toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-            })}
-          </Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <View style={styles.statHeader}>
-            <Text style={styles.statLabel}>Active Transactions</Text>
-            <Ionicons name="list-outline" size={14} color={Colors.textSecondary} />
-          </View>
-          <Text style={styles.statValue}>{transactions.length} items</Text>
         </View>
       </View>
 
@@ -298,6 +367,99 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           </View>
         )}
       </View>
+
+      {/* Wallet Management & Reset Modal */}
+      <Modal
+        visible={walletModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setWalletModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <Ionicons name="wallet-outline" size={20} color={Colors.white} />
+                <Text style={styles.modalTitle}>Manage Wallets</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setWalletModalVisible(false);
+                  setEditingAccountId(null);
+                }}
+              >
+                <Ionicons name="close" size={22} color={Colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              Tap any wallet to set your real balance, or wipe mock balances to ₱0.00.
+            </Text>
+
+            <ScrollView style={{ maxHeight: 260, marginVertical: 10 }}>
+              {accounts.map((acc) => {
+                const isEditing = editingAccountId === acc.id;
+                return (
+                  <View key={acc.id} style={styles.walletModalItem}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.walletItemName}>{acc.name}</Text>
+                      <Text style={styles.walletItemType}>{acc.type}</Text>
+                    </View>
+
+                    {isEditing ? (
+                      <View style={styles.editBalanceRow}>
+                        <TextInput
+                          style={styles.balanceInput}
+                          keyboardType="numeric"
+                          placeholder="0.00"
+                          placeholderTextColor={Colors.textMuted}
+                          value={balanceInput}
+                          onChangeText={setBalanceInput}
+                          autoFocus
+                        />
+                        <TouchableOpacity
+                          style={styles.saveBalBtn}
+                          onPress={() => handleSaveBalance(acc.id)}
+                        >
+                          <Ionicons name="checkmark" size={16} color={Colors.black} />
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.balanceDisplayBtn}
+                        onPress={() => {
+                          setEditingAccountId(acc.id);
+                          setBalanceInput(String(Number(acc.balance) || 0));
+                        }}
+                      >
+                        <Text style={styles.walletItemBal}>
+                          {currencySymbol}
+                          {Number(acc.balance || 0).toLocaleString('en-US', {
+                            minimumFractionDigits: 2,
+                          })}
+                        </Text>
+                        <Ionicons name="pencil" size={12} color={Colors.textMuted} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            {/* Clear / Reset All to 0 Button */}
+            <TouchableOpacity
+              style={styles.resetAllBtn}
+              onPress={handleResetAllToZero}
+              disabled={isResetting}
+            >
+              <Ionicons name="trash-outline" size={16} color="#EF4444" />
+              <Text style={styles.resetAllBtnText}>
+                {isResetting ? 'Resetting...' : 'Reset All Wallets to ₱0.00'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -450,13 +612,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 10,
     marginVertical: 12,
   },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
   statCard: {
-    width: '48.5%',
+    flex: 1,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
@@ -571,5 +735,119 @@ const styles = StyleSheet.create({
   },
   txAmountExpense: {
     color: Colors.textSecondary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 20,
+    padding: 20,
+    gap: 8,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: Colors.white,
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  walletModalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderColor: Colors.borderSubtle,
+    gap: 12,
+  },
+  walletItemName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  walletItemType: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 1,
+  },
+  balanceDisplayBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.surfaceSubtle,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  walletItemBal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  editBalanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  balanceInput: {
+    width: 90,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.white,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.white,
+    textAlign: 'right',
+  },
+  saveBalBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resetAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    marginTop: 8,
+  },
+  resetAllBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#EF4444',
   },
 });

@@ -38,9 +38,9 @@ export class AuthService {
             currency: input.currency || 'PHP',
             accounts: {
               create: [
-                { name: 'GCash Wallet', type: 'WALLET', balance: 5000, currency: input.currency || 'PHP', color: '#007DFE', icon: 'Smartphone' },
-                { name: 'BPI Savings', type: 'SAVINGS', balance: 45000, currency: input.currency || 'PHP', color: '#B11116', icon: 'Landmark' },
-                { name: 'Cash on Hand', type: 'CASH', balance: 2500, currency: input.currency || 'PHP', color: '#10B981', icon: 'Banknote' },
+                { name: 'GCash Wallet', type: 'WALLET', balance: 0, currency: input.currency || 'PHP', color: '#007DFE', icon: 'Smartphone' },
+                { name: 'Bank Savings', type: 'SAVINGS', balance: 0, currency: input.currency || 'PHP', color: '#B11116', icon: 'Landmark' },
+                { name: 'Cash on Hand', type: 'CASH', balance: 0, currency: input.currency || 'PHP', color: '#10B981', icon: 'Banknote' },
               ],
             },
             categories: {

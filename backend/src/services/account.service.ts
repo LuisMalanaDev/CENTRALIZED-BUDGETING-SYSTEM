@@ -96,4 +96,22 @@ export class AccountService {
       }
     );
   }
+
+  static async resetBalances(userId: string) {
+    return dbSafe(
+      async () => {
+        await prisma.account.updateMany({
+          where: { userId },
+          data: { balance: 0 },
+        });
+        return { message: 'All account balances reset to 0' };
+      },
+      async () => {
+        mockStore.accounts.forEach((a) => {
+          if (a.userId === userId) a.balance = 0;
+        });
+        return { message: 'All account balances reset to 0' };
+      }
+    );
+  }
 }
