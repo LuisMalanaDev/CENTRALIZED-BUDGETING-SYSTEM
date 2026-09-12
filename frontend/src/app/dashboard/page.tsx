@@ -1,97 +1,87 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import Link from 'next/link';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
-import { StatCard } from '@/components/dashboard/StatCard';
-import { CashflowBarChart, CashflowPoint } from '@/components/charts/CashflowBarChart';
-import { CategoryDonutChart, CategoryBreakdownItem } from '@/components/charts/CategoryDonutChart';
-import { formatCurrency, formatDate, getTagColor } from '@/lib/utils';
-import { DateFilterBar, DateFilterRange } from '@/components/dashboard/DateFilterBar';
 import {
+  Users,
+  Receipt,
+  TrendingUp,
+  ShieldCheck,
+  Search,
   Wallet,
-  TrendingDown,
   Calendar,
-  ArrowUpRight,
-  ArrowDownLeft,
-  ShoppingBag,
-  ShoppingCart,
-  ChevronRight,
-  Plus,
+  CreditCard,
+  CheckCircle2,
+  Activity,
   RefreshCw,
-  Smartphone,
-  Landmark,
-  Banknote,
 } from 'lucide-react';
 
-interface SummaryData {
-  totalNetWorth: number;
-  monthlyBurnRate: number;
-  monthlyIncome: number;
-  netCashflow: number;
-  overallBudgetLimit: number | null;
-  remainingDailyBudget: number;
-  daysRemainingInMonth: number;
+interface AdminSummary {
+  totalUsers: number;
+  totalTransactions: number;
+  totalWallets: number;
+  totalVolume: number;
+  totalExpenses: number;
+  totalIncome: number;
+  systemStatus: string;
 }
 
-interface TrackerMetrics {
-  shopeeTotal: number;
-  foodDeliveryTotal: number;
-  groceryTotal: number;
-  combinedLifestyleSpend: number;
-}
-
-interface AccountItem {
+interface AdminUserItem {
   id: string;
+  email: string;
   name: string;
-  type: string;
-  balance: number;
   currency: string;
+  createdAt: string;
+  transactionCount: number;
+  walletCount: number;
+  totalBalance: number;
 }
 
-export default function DashboardOverviewPage() {
+interface AdminAnalytics {
+  categoryBreakdown: { category: string; amount: number }[];
+  paymentBreakdown: { method: string; amount: number }[];
+  totalRecords: number;
+}
+
+export default function AdminDashboardPage() {
   const { user } = useAuth();
-  const currency = user?.currency || 'PHP';
-
-  const [dateFilter, setDateFilter] = useState<DateFilterRange | null>(null);
-  const [summary, setSummary] = useState<SummaryData | null>(null);
-  const [cashflow, setCashflow] = useState<CashflowPoint[]>([]);
-  const [categoryBreakdown, setCategoryBreakdown] = useState<CategoryBreakdownItem[]>([]);
-  const [totalExpense, setTotalExpense] = useState(0);
-  const [trackerMetrics, setTrackerMetrics] = useState<TrackerMetrics | null>(null);
-  const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
-  const [accounts, setAccounts] = useState<AccountItem[]>([]);
+  const [summary, setSummary] = useState<AdminSummary>({
+    totalUsers: 0,
+    totalTransactions: 0,
+    totalWallets: 0,
+    totalVolume: 0,
+    totalExpenses: 0,
+    totalIncome: 0,
+    systemStatus: 'ONLINE',
+  });
+  const [users, setUsers] = useState<AdminUserItem[]>([]);
+  const [analytics, setAnalytics] = useState<AdminAnalytics>({
+    categoryBreakdown: [],
+    paymentBreakdown: [],
+    totalRecords: 0,
+  });
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const dateFilterRef = useRef<DateFilterRange | null>(null);
 
-  const fetchDashboardData = useCallback(async (filterOverride?: DateFilterRange | null) => {
+  const fetchAdminData = useCallback(async () => {
     try {
-      const activeFilter = filterOverride !== undefined ? filterOverride : dateFilterRef.current;
-      const params = new URLSearchParams();
-      if (activeFilter?.startDate) params.append('startDate', activeFilter.startDate);
-      if (activeFilter?.endDate) params.append('endDate', activeFilter.endDate);
-      const queryStr = params.toString() ? `?${params.toString()}` : '';
-
-      const [sumRes, cfRes, bdRes, trkRes, txRes, accRes] = await Promise.all([
-        api.get<SummaryData>(`/api/analytics/summary${queryStr}`),
-        api.get<{ cashflow: CashflowPoint[] }>('/api/analytics/cashflow?months=6'),
-        api.get<{ breakdown: CategoryBreakdownItem[]; totalExpense: number }>(`/api/analytics/breakdown${queryStr}`),
-        api.get<{ metrics: TrackerMetrics }>(`/api/analytics/shopping-tracker${queryStr}`),
-        api.get<{ transactions: any[] }>(`/api/transactions?limit=6${params.toString() ? `&${params.toString()}` : ''}`),
-        api.get<{ accounts: AccountItem[] }>('/api/accounts'),
+      const [sumRes, usersRes, analyticsRes] = await Promise.all([
+        api.get<AdminSummary>('/api/admin/summary').catch(() => null),
+        api.get<{ users: AdminUserItem[] }>('/api/admin/users').catch(() => ({ users: [] })),
+        api.get<AdminAnalytics>('/api/admin/analytics').catch(() => ({
+          categoryBreakdown: [],
+          paymentBreakdown: [],
+          totalRecords: 0,
+        })),
       ]);
 
-      setSummary(sumRes);
-      setCashflow(cfRes.cashflow || []);
-      setCategoryBreakdown(bdRes.breakdown || []);
-      setTotalExpense(bdRes.totalExpense || 0);
-      setTrackerMetrics(trkRes.metrics || null);
-      setRecentTransactions(txRes.transactions || []);
-      setAccounts(accRes.accounts || []);
+      if (sumRes) setSummary(sumRes);
+      if (usersRes?.users) setUsers(usersRes.users);
+      if (analyticsRes) setAnalytics(analyticsRes);
     } catch (err) {
-      console.error('Failed to load dashboard data', err);
+      console.warn('Failed to load admin data:', err);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -99,313 +89,326 @@ export default function DashboardOverviewPage() {
   }, []);
 
   useEffect(() => {
-    // Initial fetch
-    fetchDashboardData();
+    fetchAdminData();
+  }, [fetchAdminData]);
 
-    // Listen to global quick add events
-    const handleGlobalRefresh = () => fetchDashboardData();
-    window.addEventListener('wealthsync:refresh', handleGlobalRefresh);
-    return () => window.removeEventListener('wealthsync:refresh', handleGlobalRefresh);
-  }, [fetchDashboardData]);
-
-  const handleRefresh = () => {
+  const handleManualRefresh = () => {
     setRefreshing(true);
-    fetchDashboardData();
+    fetchAdminData();
   };
 
-  const handleDateFilterChange = useCallback((range: DateFilterRange) => {
-    dateFilterRef.current = range;
-    setDateFilter(range);
-    fetchDashboardData(range);
-  }, [fetchDashboardData]);
+  const filteredUsers = users.filter((u) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return u.name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q);
+  });
 
   return (
-    <div className="space-y-6 sm:space-y-8 animate-in fade-in duration-300">
-      {/* Top Welcome Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-8 pb-16">
+      {/* Top Admin Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-neutral-200 dark:border-neutral-800 pb-6">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-neutral-900 dark:text-white tracking-tight">
-            Financial Command Center
+          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 text-[11px] font-semibold text-neutral-600 dark:text-neutral-400 mb-2">
+            <ShieldCheck className="w-3.5 h-3.5 text-black dark:text-white" />
+            <span>Admin Command Center</span>
+            <span className="w-1 h-1 rounded-full bg-emerald-500" />
+            <span className="text-emerald-600 dark:text-emerald-400">Live PostgreSQL</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-white">
+            System Overview & User Directory
           </h1>
           <p className="text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-            Hello, {user?.name || 'Liam Malana'}. Real-time tracking of money left, income sources, and automatic expense subtractions.
+            Real-time analytics and telemetry for all active users across web and mobile.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex items-center gap-3">
           <button
-            onClick={handleRefresh}
+            onClick={handleManualRefresh}
             disabled={refreshing}
-            className="p-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors"
-            title="Refresh metrics"
+            className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-neutral-100 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-all flex items-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
           >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-black dark:text-white' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            <span>Refresh Telemetry</span>
           </button>
-
-          {/* Consolidated Single Action Button */}
-          <button
-            onClick={() => {
-              if (typeof window !== 'undefined') {
-                window.dispatchEvent(new CustomEvent('wealthsync:open-modal', { detail: { mode: 'EXPENSE' } }));
-              }
-            }}
-            className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-black hover:bg-neutral-800 dark:bg-white dark:text-black dark:hover:bg-neutral-200 shadow-sm flex items-center gap-1.5 cursor-pointer transition-all active:scale-[0.98]"
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>Quick Log</span>
-          </button>
-
-          <Link
-            href="/dashboard/tracker"
-            className="hidden sm:inline-flex px-3.5 py-2 rounded-xl text-xs font-medium text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors items-center gap-1.5"
-          >
-            <ShoppingBag className="w-3.5 h-3.5" />
-            <span>Shopee Tracker</span>
-          </Link>
         </div>
       </div>
 
-      {/* CALENDAR FILTER (Day, Month, Year, All Time) */}
-      <DateFilterBar onChange={handleDateFilterChange} defaultPeriod="month" />
+      {/* 4 Top KPI Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Users */}
+        <div className="p-5 rounded-2xl bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 shadow-sm space-y-3">
+          <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs font-semibold uppercase tracking-wider">
+            <span>Total Users</span>
+            <div className="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-900 flex items-center justify-center text-neutral-900 dark:text-white">
+              <Users className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-white">
+            {summary.totalUsers}
+          </div>
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+            Registered accounts on mobile & web
+          </p>
+        </div>
 
-      {/* KPI METRIC CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        <StatCard
-          title="Total Money Left"
-          value={formatCurrency(summary?.totalNetWorth, currency)}
-          subtitle="Available funds across all accounts"
-          icon={Wallet}
-          iconColor="text-neutral-900 bg-neutral-100 dark:text-white dark:bg-neutral-800"
-          badge={{ text: 'Available Cash', variant: 'neutral' }}
-        />
+        {/* Total Transactions */}
+        <div className="p-5 rounded-2xl bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 shadow-sm space-y-3">
+          <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs font-semibold uppercase tracking-wider">
+            <span>Total Transactions</span>
+            <div className="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-900 flex items-center justify-center text-neutral-900 dark:text-white">
+              <Receipt className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-white">
+            {summary.totalTransactions}
+          </div>
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+            Logged entries across all accounts
+          </p>
+        </div>
 
-        <StatCard
-          title={dateFilter?.label ? `${dateFilter.label} Inflow` : 'Total Money Received'}
-          value={formatCurrency(summary?.monthlyIncome, currency)}
-          subtitle="Salary, Freelance & Inflows"
-          icon={ArrowDownLeft}
-          iconColor="text-neutral-900 bg-neutral-100 dark:text-white dark:bg-neutral-800"
-          badge={{ text: 'Inflow (+)', variant: 'neutral' }}
-        />
+        {/* Total Platform Volume */}
+        <div className="p-5 rounded-2xl bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 shadow-sm space-y-3">
+          <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs font-semibold uppercase tracking-wider">
+            <span>System Volume</span>
+            <div className="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-900 flex items-center justify-center text-neutral-900 dark:text-white">
+              <TrendingUp className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-white">
+            ₱{summary.totalVolume.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </div>
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+            Total monetary activity recorded
+          </p>
+        </div>
 
-        <StatCard
-          title={dateFilter?.label ? `${dateFilter.label} Expenses` : 'Total Expenses'}
-          value={formatCurrency(summary?.monthlyBurnRate, currency)}
-          subtitle="Subtracted from your money left"
-          icon={TrendingDown}
-          iconColor="text-neutral-900 bg-neutral-100 dark:text-white dark:bg-neutral-800"
-          badge={{ text: 'Outflow (-)', variant: 'neutral' }}
-        />
-
-        <StatCard
-          title="Safe-to-Spend / Day"
-          value={formatCurrency(summary?.remainingDailyBudget, currency)}
-          subtitle={`${summary?.daysRemainingInMonth || 19} days remaining in cycle`}
-          icon={Calendar}
-          iconColor="text-neutral-900 bg-neutral-100 dark:text-white dark:bg-neutral-800"
-          badge={{ text: 'Daily Guide', variant: 'neutral' }}
-        />
-      </div>
-
-      {/* WHERE YOUR MONEY IS STORED (WALLETS & ACCOUNTS) */}
-      <div className="p-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-          <div>
-            <h3 className="font-bold text-base text-neutral-900 dark:text-white flex items-center gap-2">
+        {/* Total Wallets / Accounts */}
+        <div className="p-5 rounded-2xl bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 shadow-sm space-y-3">
+          <div className="flex items-center justify-between text-neutral-500 dark:text-neutral-400 text-xs font-semibold uppercase tracking-wider">
+            <span>Active Wallets</span>
+            <div className="w-8 h-8 rounded-lg bg-neutral-100 dark:bg-neutral-900 flex items-center justify-center text-neutral-900 dark:text-white">
               <Wallet className="w-4 h-4" />
-              <span>Where Your Money Is Stored</span>
-            </h3>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              Your actual funds. When you log expenses, it automatically deducts from your remaining money here.
-            </p>
+            </div>
           </div>
-          <button
-            onClick={() => {
-              if (typeof window !== 'undefined') {
-                window.dispatchEvent(new CustomEvent('wealthsync:open-modal', { detail: { mode: 'INCOME' } }));
-              }
-            }}
-            className="text-xs font-bold text-black dark:text-white hover:underline flex items-center gap-1 self-start sm:self-auto cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-            <span>+ Add money / starting balance</span>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {accounts.map((acc) => {
-            const isGcash = acc.name.toLowerCase().includes('gcash') || acc.type === 'WALLET';
-            const isBank = acc.name.toLowerCase().includes('bank') || acc.type === 'SAVINGS' || acc.type === 'CHECKING';
-            const isCash = acc.name.toLowerCase().includes('cash') || acc.type === 'CASH';
-
-            return (
-              <div
-                key={acc.id}
-                className="p-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/50 flex flex-col justify-between gap-3"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-black text-white dark:bg-white dark:text-black flex items-center justify-center font-bold">
-                      {isGcash ? <Smartphone className="w-4 h-4" /> : isBank ? <Landmark className="w-4 h-4" /> : <Banknote className="w-4 h-4" />}
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-neutral-900 dark:text-white">{acc.name}</h4>
-                      <p className="text-[10px] text-neutral-400 uppercase tracking-wider font-mono">{acc.type}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-baseline justify-between pt-2 border-t border-neutral-200 dark:border-neutral-800">
-                  <span className="text-[11px] text-neutral-500">Balance:</span>
-                  <span className="text-base font-extrabold text-neutral-900 dark:text-white font-mono">
-                    {formatCurrency(acc.balance, currency)}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+          <div className="text-3xl font-extrabold tracking-tight text-neutral-900 dark:text-white">
+            {summary.totalWallets}
+          </div>
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+            GCash, Maya, cash, & bank accounts
+          </p>
         </div>
       </div>
 
-      {/* LIFESTYLE ORDERS HIGHLIGHT CALLOUT */}
-      {trackerMetrics && (
-        <div className="p-5 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-black text-white dark:bg-white dark:text-black shadow-sm">
-              <ShoppingBag className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
-                Lifestyle & E-Commerce Tracker Active
-              </h3>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Shopee parcels: <strong className="text-neutral-900 dark:text-white">{formatCurrency(trackerMetrics.shopeeTotal, currency)}</strong> • Groceries: <strong className="text-neutral-900 dark:text-white">{formatCurrency(trackerMetrics.groceryTotal, currency)}</strong>
-              </p>
-            </div>
-          </div>
-          <Link
-            href="/dashboard/tracker"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-900 dark:text-white hover:underline"
-          >
-            <span>Open Ingestion Parser</span>
-            <ChevronRight className="w-4 h-4" />
-          </Link>
-        </div>
-      )}
-
-      {/* CHARTS ROW */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Cashflow Bar Chart (2 cols) */}
-        <div className="lg:col-span-2 p-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-bold text-base text-neutral-900 dark:text-white">
-                Monthly Cashflow Trajectory
-              </h3>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                Compare actual inflows vs outflows over the past 6 months
-              </p>
-            </div>
-          </div>
-          <CashflowBarChart data={cashflow} currency={currency} />
-        </div>
-
-        {/* Category Breakdown Donut (1 col) */}
-        <div className="p-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black shadow-sm flex flex-col justify-between">
+      {/* SECTION: Admin's Users Directory Table */}
+      <div id="users" className="p-6 rounded-3xl bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h3 className="font-bold text-base text-neutral-900 dark:text-white">
-              Category Distribution
-            </h3>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
-              Current cycle expenses
+            <h2 className="text-lg font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+              <Users className="w-5 h-5 text-neutral-900 dark:text-white" />
+              <span>Admin&apos;s Users Directory</span>
+            </h2>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+              Overview of all registered users (girlfriend, friends, family, and accounts).
             </p>
-            <CategoryDonutChart
-              data={categoryBreakdown}
-              totalExpense={totalExpense}
-              currency={currency}
+          </div>
+
+          {/* Search Box */}
+          <div className="relative w-full sm:w-72">
+            <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search user by name or email..."
+              className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-black dark:focus:ring-white"
             />
           </div>
-          <div className="pt-4 mt-4 border-t border-neutral-100 dark:border-neutral-800 text-center">
-            <Link
-              href="/dashboard/budgets"
-              className="text-xs font-semibold text-neutral-900 dark:text-white hover:underline inline-flex items-center gap-1"
-            >
-              <span>Manage spending limits</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
+        </div>
+
+        {/* Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-400 font-semibold uppercase tracking-wider text-[10px]">
+                <th className="py-3 px-4">User</th>
+                <th className="py-3 px-4">Currency</th>
+                <th className="py-3 px-4">Registered Date</th>
+                <th className="py-3 px-4 text-center">Transactions</th>
+                <th className="py-3 px-4 text-center">Active Wallets</th>
+                <th className="py-3 px-4 text-right">Tracked Balance</th>
+                <th className="py-3 px-4 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100 dark:divide-neutral-900">
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-8 text-neutral-400">
+                    Loading users directory...
+                  </td>
+                </tr>
+              ) : filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-8 text-neutral-400">
+                    No users found. Once your friends register on mobile, they will appear here!
+                  </td>
+                </tr>
+              ) : (
+                filteredUsers.map((u) => {
+                  const joinedDate = new Date(u.createdAt).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  });
+
+                  return (
+                    <tr
+                      key={u.id}
+                      className="hover:bg-neutral-50 dark:hover:bg-neutral-900/40 transition-colors"
+                    >
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-black dark:bg-white text-white dark:text-black font-bold text-xs flex items-center justify-center shrink-0">
+                            {u.name?.charAt(0)?.toUpperCase() || 'U'}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-neutral-900 dark:text-white truncate">
+                              {u.name}
+                            </div>
+                            <div className="text-[11px] text-neutral-500 dark:text-neutral-400 font-mono truncate">
+                              {u.email}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4 font-mono font-medium text-neutral-700 dark:text-neutral-300">
+                        {u.currency}
+                      </td>
+
+                      <td className="py-3 px-4 text-neutral-500 dark:text-neutral-400">
+                        {joinedDate}
+                      </td>
+
+                      <td className="py-3 px-4 text-center font-semibold text-neutral-900 dark:text-white">
+                        <span className="px-2 py-0.5 rounded-md bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
+                          {u.transactionCount} logs
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-4 text-center text-neutral-600 dark:text-neutral-400">
+                        {u.walletCount} wallets
+                      </td>
+
+                      <td className="py-3 px-4 text-right font-mono font-bold text-neutral-900 dark:text-white">
+                        ₱{u.totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </td>
+
+                      <td className="py-3 px-4 text-center">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          Active
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* RECENT TRANSACTIONS LEDGER PREVIEW */}
-      <div className="p-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-black shadow-sm">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h3 className="font-bold text-base text-neutral-900 dark:text-white">
-              Recent Activity
-            </h3>
-            <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              Latest transactions logged via manual entry or statement parser
-            </p>
+      {/* SECTION: Platform Analytics & Payment Methods Breakdown */}
+      <div id="analytics" className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Payment Methods Breakdown */}
+        <div className="p-6 rounded-3xl bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-neutral-900 dark:text-white" />
+              <span>Payment Methods Volume</span>
+            </h2>
+            <span className="text-xs text-neutral-400 font-mono">Platform Distribution</span>
           </div>
-          <Link
-            href="/dashboard/transactions"
-            className="text-xs font-semibold text-neutral-900 dark:text-white hover:underline flex items-center gap-1"
-          >
-            <span>View Full Ledger</span>
-            <ChevronRight className="w-4 h-4" />
-          </Link>
+
+          {analytics.paymentBreakdown.length === 0 ? (
+            <div className="text-center py-8 text-xs text-neutral-400">
+              No payment activity recorded yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {analytics.paymentBreakdown.map((pm) => {
+                const percent =
+                  summary.totalVolume > 0
+                    ? Math.round((pm.amount / summary.totalVolume) * 100)
+                    : 0;
+
+                return (
+                  <div key={pm.method} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-neutral-800 dark:text-neutral-200">
+                        {pm.method}
+                      </span>
+                      <span className="font-mono text-neutral-500 dark:text-neutral-400">
+                        ₱{pm.amount.toLocaleString()} ({percent}%)
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-neutral-100 dark:bg-neutral-900 overflow-hidden">
+                      <div
+                        className="h-full bg-black dark:bg-white rounded-full transition-all duration-500"
+                        style={{ width: `${Math.max(5, percent)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-          {recentTransactions.length === 0 ? (
-            <p className="text-center py-8 text-xs text-neutral-400">
-              No transactions logged yet. Click Quick Log (+) to add your first expense.
-            </p>
-          ) : (
-            recentTransactions.map((tx) => {
-              const isIncome = tx.type === 'INCOME';
-              return (
-                <div
-                  key={tx.id}
-                  className="py-3.5 flex items-center justify-between gap-4 hover:bg-neutral-50 dark:hover:bg-neutral-900/40 px-2 rounded-xl transition-colors"
-                >
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white">
-                      {tx.isShopeeOrder ? (
-                        <ShoppingBag className="w-4 h-4" />
-                      ) : (
-                        <ShoppingCart className="w-4 h-4" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs sm:text-sm font-semibold text-neutral-800 dark:text-neutral-200 truncate">
-                        {tx.description}
-                      </p>
-                      <div className="flex items-center gap-2 text-[11px] text-neutral-400 mt-0.5">
-                        <span>{formatDate(tx.date)}</span>
-                        <span>•</span>
-                        <span>{tx.paymentMethod?.replace('_', ' ')}</span>
-                        {tx.isShopeeOrder && (
-                          <span className="hidden sm:inline-block px-1.5 py-0.2 text-[10px] font-semibold rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700">
-                            Shopee Order
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+        {/* Top Spending Categories */}
+        <div className="p-6 rounded-3xl bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+              <Activity className="w-4 h-4 text-neutral-900 dark:text-white" />
+              <span>Top Category Activity</span>
+            </h2>
+            <span className="text-xs text-neutral-400 font-mono">System-Wide</span>
+          </div>
 
-                  <div className="text-right shrink-0">
-                    <p className="text-xs sm:text-sm font-bold text-neutral-900 dark:text-white">
-                      {isIncome ? '+' : '-'}{formatCurrency(tx.amount, currency)}
-                    </p>
-                    <span className="text-[10px] text-neutral-400 block">
-                      {tx.category?.name || 'General'}
-                    </span>
+          {analytics.categoryBreakdown.length === 0 ? (
+            <div className="text-center py-8 text-xs text-neutral-400">
+              No category logs recorded yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {analytics.categoryBreakdown.slice(0, 6).map((cat) => {
+                const percent =
+                  summary.totalVolume > 0
+                    ? Math.round((cat.amount / summary.totalVolume) * 100)
+                    : 0;
+
+                return (
+                  <div key={cat.category} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-neutral-800 dark:text-neutral-200">
+                        {cat.category}
+                      </span>
+                      <span className="font-mono text-neutral-500 dark:text-neutral-400">
+                        ₱{cat.amount.toLocaleString()} ({percent}%)
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-neutral-100 dark:bg-neutral-900 overflow-hidden">
+                      <div
+                        className="h-full bg-black dark:bg-white rounded-full transition-all duration-500"
+                        style={{ width: `${Math.max(5, percent)}%` }}
+                      />
+                    </div>
                   </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </div>
           )}
         </div>
       </div>

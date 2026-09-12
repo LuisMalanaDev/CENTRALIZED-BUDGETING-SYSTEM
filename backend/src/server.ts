@@ -11,6 +11,7 @@ import { budgetRoutes } from './routes/budget.routes.js';
 import { vaultRoutes } from './routes/vault.routes.js';
 import { analyticsRoutes } from './routes/analytics.routes.js';
 import { webhookRoutes } from './routes/webhook.routes.js';
+import { adminRoutes } from './routes/admin.routes.js';
 import { prisma } from './prisma.js';
 
 dotenv.config();
@@ -76,6 +77,7 @@ async function main() {
   await server.register(vaultRoutes, { prefix: '/api/savings-goals' });
   await server.register(analyticsRoutes, { prefix: '/api/analytics' });
   await server.register(webhookRoutes, { prefix: '/api/webhooks' });
+  await server.register(adminRoutes, { prefix: '/api/admin' });
 
   // Error handler
   server.setErrorHandler((error: any, request, reply) => {

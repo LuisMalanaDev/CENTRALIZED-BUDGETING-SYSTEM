@@ -7,18 +7,14 @@ import { useAuth } from '@/context/AuthContext';
 import { ThemeToggle } from '../ThemeToggle';
 import {
   LayoutDashboard,
-  ShoppingBag,
-  Receipt,
-  PieChart,
-  ShieldCheck,
+  Users,
   BarChart3,
-  Plus,
+  ShieldCheck,
   LogOut,
-  Wallet,
 } from 'lucide-react';
 
 interface SidebarProps {
-  onOpenQuickAdd: () => void;
+  onOpenQuickAdd?: () => void;
 }
 
 export function Sidebar({ onOpenQuickAdd }: SidebarProps) {
@@ -26,12 +22,9 @@ export function Sidebar({ onOpenQuickAdd }: SidebarProps) {
   const { user, logout } = useAuth();
 
   const navItems = [
-    { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-    { href: '/dashboard/tracker', label: 'Shopee & Groceries', icon: ShoppingBag, badge: 'Smart' },
-    { href: '/dashboard/transactions', label: 'Transactions', icon: Receipt },
-    { href: '/dashboard/budgets', label: 'Dynamic Budgets', icon: PieChart },
-    { href: '/dashboard/vaults', label: 'Savings Vaults', icon: ShieldCheck },
-    { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
+    { href: '/dashboard', label: 'Admin Overview', icon: LayoutDashboard },
+    { href: '/dashboard#users', label: "Users Directory", icon: Users, badge: 'Live' },
+    { href: '/dashboard#analytics', label: 'System Analytics', icon: BarChart3 },
   ];
 
   return (
@@ -40,29 +33,31 @@ export function Sidebar({ onOpenQuickAdd }: SidebarProps) {
       <div className="p-6 border-b border-neutral-100 dark:border-neutral-900 flex items-center justify-between">
         <Link href="/dashboard" className="flex items-center gap-2.5 group">
           <div className="w-8 h-8 rounded-lg bg-black dark:bg-white text-white dark:text-black flex items-center justify-center font-bold">
-            <Wallet className="w-4 h-4" />
+            <ShieldCheck className="w-4 h-4" />
           </div>
           <div className="flex flex-col">
             <span className="font-bold text-sm tracking-tight text-black dark:text-white">
               WealthSync
             </span>
             <span className="text-[9px] uppercase font-mono tracking-wider text-neutral-400 -mt-0.5">
-              Personal Finance
+              Admin Portal
             </span>
           </div>
         </Link>
         <ThemeToggle />
       </div>
 
-      {/* Quick Action Button - Single Consolidated Button */}
+      {/* Admin Status Pill */}
       <div className="p-4">
-        <button
-          onClick={onOpenQuickAdd}
-          className="w-full py-2.5 px-4 rounded-xl font-semibold text-xs text-white dark:text-black bg-black dark:bg-white hover:opacity-90 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm active:scale-[0.98]"
-        >
-          <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-          <span>Quick Log</span>
-        </button>
+        <div className="p-3 rounded-xl bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+              Admin Command
+            </span>
+          </div>
+          <span className="text-[10px] font-mono text-neutral-400">v1.0.0</span>
+        </div>
       </div>
 
       {/* Navigation links */}
@@ -74,7 +69,7 @@ export function Sidebar({ onOpenQuickAdd }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+              className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 isActive
                   ? 'bg-neutral-100 dark:bg-neutral-900 text-black dark:text-white border border-neutral-300 dark:border-neutral-800'
                   : 'text-neutral-500 dark:text-neutral-400 hover:text-black dark:hover:text-white hover:bg-neutral-50 dark:hover:bg-neutral-900/50'
@@ -85,7 +80,7 @@ export function Sidebar({ onOpenQuickAdd }: SidebarProps) {
                 <span>{item.label}</span>
               </div>
               {item.badge && (
-                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded border border-neutral-300 dark:border-neutral-800 text-neutral-500 dark:text-neutral-400">
+                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded border border-neutral-200 dark:border-neutral-800 text-emerald-600 dark:text-emerald-400 font-bold">
                   {item.badge}
                 </span>
               )}
@@ -94,29 +89,26 @@ export function Sidebar({ onOpenQuickAdd }: SidebarProps) {
         })}
       </nav>
 
-      {/* User Footer Profile */}
+      {/* Admin User Footer Profile */}
       <div className="p-4 border-t border-neutral-100 dark:border-neutral-900">
-        <div className="flex items-center justify-between p-2 rounded-xl bg-neutral-50 dark:bg-neutral-900/60 border border-neutral-200 dark:border-neutral-800">
+        <div className="flex items-center justify-between p-2.5 rounded-xl bg-neutral-50 dark:bg-neutral-900/60 border border-neutral-200 dark:border-neutral-800">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-7 h-7 rounded-md bg-neutral-200 dark:bg-neutral-800 text-black dark:text-white font-bold text-xs flex items-center justify-center shrink-0">
-              {user?.name ? user.name.charAt(0).toUpperCase() : 'L'}
+            <div className="w-8 h-8 rounded-full bg-black dark:bg-white text-white dark:text-black font-bold text-xs flex items-center justify-center shrink-0">
+              A
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-semibold text-black dark:text-white truncate">
-                {user?.name || 'Liam Malana'}
+              <p className="text-xs font-bold text-black dark:text-white truncate">
+                Admin123
               </p>
-              <p className="text-[10px] text-neutral-400 truncate">{user?.email || 'liammalana12@gmail.com'}</p>
+              <p className="text-[10px] text-neutral-400 truncate">
+                Administrator
+              </p>
             </div>
           </div>
           <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              logout();
-            }}
-            className="p-2 rounded-lg text-neutral-400 hover:text-black dark:hover:text-white hover:bg-neutral-200 dark:hover:bg-neutral-800 transition-all cursor-pointer shrink-0 active:scale-95"
+            onClick={logout}
+            className="p-1.5 rounded-lg text-neutral-400 hover:text-red-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
             title="Log out"
-            aria-label="Log out"
           >
             <LogOut className="w-4 h-4" />
           </button>

