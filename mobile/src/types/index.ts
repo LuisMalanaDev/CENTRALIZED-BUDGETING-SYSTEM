@@ -58,13 +58,13 @@ export interface SavingsVault {
 
 export interface TrackerOrder {
   id: string;
-  platform: 'SHOPEE' | 'LAZADA' | 'TIKTOK' | 'GROCERY' | 'OTHER';
+  platform: 'SHOPEE' | 'LAZADA' | 'TIKTOK' | 'GROCERY' | 'GOOGLE_PLAY' | 'STEAM' | 'ROBLOX' | 'OTHER';
   orderId?: string;
   trackingNumber?: string;
   merchant?: string;
   items?: string;
   amount: number;
-  status: 'PENDING' | 'TO_SHIP' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
+  status: 'PENDING' | 'TO_SHIP' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED' | 'COMPLETED';
   orderDate: string;
   deliveryDate?: string;
 }

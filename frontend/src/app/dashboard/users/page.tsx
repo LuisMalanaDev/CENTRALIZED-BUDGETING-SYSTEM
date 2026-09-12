@@ -68,11 +68,21 @@ export default function AdminUsersPage() {
     fetchUsersData();
   };
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
   const filteredUsers = users.filter((u) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return u.name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q);
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+  const paginatedUsers = filteredUsers.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-16">
@@ -209,7 +219,7 @@ export default function AdminUsersPage() {
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((u) => {
+                paginatedUsers.map((u) => {
                   const joinedDate = new Date(u.createdAt).toLocaleDateString('en-US', {
                     month: 'short',
                     day: 'numeric',
@@ -228,9 +238,9 @@ export default function AdminUsersPage() {
                           </div>
                           <div className="min-w-0">
                             <div className="font-bold text-neutral-900 dark:text-white truncate">
-                              {u.name}
+                              {u.name || 'Anonymous User'}
                             </div>
-                            <div className="text-[11px] text-neutral-500 dark:text-neutral-400 font-mono truncate">
+                            <div className="text-xs text-neutral-500 truncate">
                               {u.email}
                             </div>
                           </div>
@@ -272,6 +282,31 @@ export default function AdminUsersPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Bar */}
+        {filteredUsers.length > PAGE_SIZE && (
+          <div className="flex items-center justify-between p-4 border-t border-neutral-200 dark:border-neutral-800 text-xs">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 font-semibold disabled:opacity-40 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors"
+            >
+              Previous
+            </button>
+
+            <span className="text-neutral-500 font-medium">
+              Page {currentPage} of {totalPages} • {filteredUsers.length} total users
+            </span>
+
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 rounded-lg border border-neutral-200 dark:border-neutral-800 font-semibold disabled:opacity-40 hover:bg-neutral-100 dark:hover:bg-neutral-900 transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -42,6 +42,16 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
     budgetCap: 0,
   });
 
+  const [txPage, setTxPage] = useState(1);
+  const TX_PAGE_SIZE = 6;
+
+  useEffect(() => {
+    setTxPage(1);
+  }, [filter]);
+
+  const totalTxPages = Math.max(1, Math.ceil(transactions.length / TX_PAGE_SIZE));
+  const paginatedRecent = transactions.slice((txPage - 1) * TX_PAGE_SIZE, txPage * TX_PAGE_SIZE);
+
   const currencySymbol = user?.currency === 'USD' ? '$' : '₱';
 
   const fetchData = useCallback(async () => {
@@ -323,7 +333,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           </View>
         ) : (
           <View style={styles.txList}>
-            {transactions.slice(0, 10).map((tx) => {
+            {paginatedRecent.map((tx) => {
               const isIncome = tx.type === 'INCOME';
               const dateObj = new Date(tx.date);
               const formattedDate = dateObj.toLocaleDateString('en-US', {
@@ -365,6 +375,45 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
                 </View>
               );
             })}
+
+            {/* Pagination Controls */}
+            {transactions.length > TX_PAGE_SIZE && (
+              <View style={styles.paginationRow}>
+                <TouchableOpacity
+                  style={[styles.pageBtn, txPage === 1 && styles.pageBtnDisabled]}
+                  disabled={txPage === 1}
+                  onPress={() => setTxPage((p) => Math.max(1, p - 1))}
+                >
+                  <Ionicons
+                    name="chevron-back"
+                    size={16}
+                    color={txPage === 1 ? Colors.textMuted : Colors.white}
+                  />
+                  <Text style={[styles.pageBtnText, txPage === 1 && styles.pageBtnTextDisabled]}>
+                    Prev
+                  </Text>
+                </TouchableOpacity>
+
+                <Text style={styles.pageInfoText}>
+                  Page {txPage} of {totalTxPages} • {transactions.length} total
+                </Text>
+
+                <TouchableOpacity
+                  style={[styles.pageBtn, txPage === totalTxPages && styles.pageBtnDisabled]}
+                  disabled={txPage === totalTxPages}
+                  onPress={() => setTxPage((p) => Math.min(totalTxPages, p + 1))}
+                >
+                  <Text style={[styles.pageBtnText, txPage === totalTxPages && styles.pageBtnTextDisabled]}>
+                    Next
+                  </Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={16}
+                    color={txPage === totalTxPages ? Colors.textMuted : Colors.white}
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         )}
       </View>
@@ -850,5 +899,41 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#EF4444',
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  pageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  pageBtnDisabled: {
+    opacity: 0.35,
+  },
+  pageBtnText: {
+    color: Colors.white,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  pageBtnTextDisabled: {
+    color: Colors.textMuted,
+  },
+  pageInfoText: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

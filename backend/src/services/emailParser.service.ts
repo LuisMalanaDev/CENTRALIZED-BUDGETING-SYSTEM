@@ -29,24 +29,29 @@ export class EmailParserService {
       return this.parseLazadaEmail(subject, body, `${subject}\n${body}`);
     }
 
-    // 3. Steam
+    // 3. Google Play (Prioritized before Roblox/in-app merchants so Google Play receipts are recognized)
+    if (
+      combined.includes('google play') ||
+      combined.includes('googleplay') ||
+      from.includes('google.com') ||
+      subject.toLowerCase().includes('google play')
+    ) {
+      return this.parseGooglePlayEmail(subject, body, `${subject}\n${body}`);
+    }
+
+    // 4. Steam
     if (combined.includes('steampowered') || combined.includes('steam')) {
       return this.parseSteamEmail(subject, body, `${subject}\n${body}`);
     }
 
-    // 4. Roblox
+    // 5. Roblox (Direct roblox.com emails)
     if (combined.includes('roblox')) {
       return this.parseRobloxEmail(subject, body, `${subject}\n${body}`);
     }
 
-    // 5. Netflix
+    // 6. Netflix
     if (combined.includes('netflix')) {
       return this.parseNetflixEmail(subject, body, `${subject}\n${body}`);
-    }
-
-    // 6. Google Play
-    if (combined.includes('google play') || combined.includes('googleplay') || from.includes('google.com')) {
-      return this.parseGooglePlayEmail(subject, body, `${subject}\n${body}`);
     }
 
     // 7. GCash
@@ -219,25 +224,59 @@ export class EmailParserService {
     const amountMatch =
       combined.match(/(?:Total|Amount)\s*[:=]?\s*(?:₱|PHP|Php|\$)?\s*([\d,]+\.?\d{0,2})/i) ||
       combined.match(/(?:₱|PHP|Php|\$)\s*([\d,]+\.?\d{0,2})/i);
-    const amount = amountMatch ? this.extractNumeric(amountMatch[1]) : 150.0;
+    const amount = amountMatch ? this.extractNumeric(amountMatch[1]) : 70.0;
 
-    // Extract app title
-    let description = 'Google Play Digital Purchase';
-    const itemMatch =
-      body.match(/(?:Item|Description|Order details)\s*[:=]?\s*([^\n\r]+)/i) ||
-      subject.match(/Your Google Play Order Receipt for (.+)/i);
-    if (itemMatch && itemMatch[1].trim()) {
-      description = `Google Play - ${itemMatch[1].trim()}`;
+    // Extract item title (e.g. "80 Robux (Roblox)")
+    let itemName = '';
+    const itemRobuxMatch = combined.match(/([0-9]+\s*(?:Robux|Diamonds|Coins|Credits|Points)[^\n\r₱]*)/i);
+    if (itemRobuxMatch) {
+      itemName = itemRobuxMatch[1].trim();
+    } else {
+      const itemTableRowMatch = combined.match(/Item\s*(?:Price)?\s*\n+([^\n\r₱]+?)(?:\s*(?:₱|PHP|Php|\$|\d))/i);
+      if (itemTableRowMatch && itemTableRowMatch[1].trim() && !itemTableRowMatch[1].toLowerCase().includes('price')) {
+        itemName = itemTableRowMatch[1].trim();
+      } else {
+        const devMatch = combined.match(/(?:purchase from|made a purchase from)\s*([^.\n]+?)\s*on Google Play/i);
+        if (devMatch) {
+          itemName = `${devMatch[1].trim()} In-App Purchase`;
+        } else {
+          const generalItemMatch =
+            body.match(/(?:Item|Description|Order details)\s*[:=]?\s*([^\n\r]+)/i) ||
+            subject.match(/Your Google Play Order Receipt for (.+)/i);
+          if (generalItemMatch && generalItemMatch[1].trim()) {
+            itemName = generalItemMatch[1].trim();
+          }
+        }
+      }
     }
+
+    const description = itemName ? `Google Play - ${itemName}` : 'Google Play Digital Purchase';
+
+    // Extract actual receipt date if available (e.g. "Order date: Aug 29, 2026")
+    let date = new Date().toISOString();
+    const dateMatch =
+      combined.match(/Order date:\s*([A-Za-z]+\s+\d{1,2},\s*\d{4}[^\n\r]*)/i) ||
+      subject.match(/from\s+([A-Za-z]+\s+\d{1,2},\s*\d{4})/i);
+    if (dateMatch) {
+      const parsedDate = new Date(dateMatch[1]);
+      if (!isNaN(parsedDate.getTime())) {
+        date = parsedDate.toISOString();
+      }
+    }
+
+    let paymentMethod: 'GCASH' | 'MAYA' | 'CREDIT_CARD' | 'DEBIT_CARD' | 'CASH' | 'BANK_TRANSFER' | 'OTHER' = 'CREDIT_CARD';
+    const lower = combined.toLowerCase();
+    if (lower.includes('gcash')) paymentMethod = 'GCASH';
+    else if (lower.includes('maya')) paymentMethod = 'MAYA';
 
     return {
       description,
       amount,
-      date: new Date().toISOString(),
-      paymentMethod: combined.toLowerCase().includes('gcash') ? 'GCASH' : 'CREDIT_CARD',
+      date,
+      paymentMethod,
       source: 'Google Play (Email Sync)',
-      tags: ['Google Play', 'Subscriptions', 'Digital Purchase'],
-      suggestedCategorySlug: 'utilities',
+      tags: ['Google Play', 'Roblox', 'Gaming', 'Digital Purchase', 'Online Orders'],
+      suggestedCategorySlug: 'shopee-online-orders',
       isShopeeOrder: false,
       orderTrackingNumber: orderId,
       rawText: combined.substring(0, 500),

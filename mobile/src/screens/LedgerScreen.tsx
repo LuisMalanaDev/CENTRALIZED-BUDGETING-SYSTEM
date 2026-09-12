@@ -64,6 +64,13 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
     fetchTransactions();
   };
 
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, typeFilter, filter]);
+
   const filteredTransactions = transactions.filter((tx) => {
     // Type filter
     if (typeFilter !== 'ALL' && tx.type !== typeFilter) return false;
@@ -78,6 +85,12 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
     }
     return true;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / PAGE_SIZE));
+  const paginatedTransactions = filteredTransactions.slice(
+    (page - 1) * PAGE_SIZE,
+    page * PAGE_SIZE
+  );
 
   return (
     <ScrollView
@@ -159,7 +172,7 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
         </View>
       ) : (
         <View style={styles.list}>
-          {filteredTransactions.map((tx) => {
+          {paginatedTransactions.map((tx) => {
             const isIncome = tx.type === 'INCOME';
             const dateObj = new Date(tx.date);
             const dateFormatted = dateObj.toLocaleDateString('en-US', {
@@ -211,6 +224,58 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
               </View>
             );
           })}
+
+          {/* Pagination Controls */}
+          {filteredTransactions.length > PAGE_SIZE && (
+            <View style={styles.paginationRow}>
+              <TouchableOpacity
+                style={[styles.pageBtn, page === 1 && styles.pageBtnDisabled]}
+                disabled={page === 1}
+                onPress={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <Ionicons
+                  name="chevron-back"
+                  size={16}
+                  color={page === 1 ? Colors.textMuted : Colors.white}
+                />
+                <Text
+                  style={[
+                    styles.pageBtnText,
+                    page === 1 && styles.pageBtnTextDisabled,
+                  ]}
+                >
+                  Prev
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={styles.pageInfoText}>
+                Page {page} of {totalPages} • {filteredTransactions.length} items
+              </Text>
+
+              <TouchableOpacity
+                style={[
+                  styles.pageBtn,
+                  page === totalPages && styles.pageBtnDisabled,
+                ]}
+                disabled={page === totalPages}
+                onPress={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                <Text
+                  style={[
+                    styles.pageBtnText,
+                    page === totalPages && styles.pageBtnTextDisabled,
+                  ]}
+                >
+                  Next
+                </Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={page === totalPages ? Colors.textMuted : Colors.white}
+                />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
     </ScrollView>
@@ -380,5 +445,41 @@ const styles = StyleSheet.create({
   txDateText: {
     fontSize: 11,
     color: Colors.textMuted,
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 18,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  pageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  pageBtnDisabled: {
+    opacity: 0.35,
+  },
+  pageBtnText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pageBtnTextDisabled: {
+    color: Colors.textMuted,
+  },
+  pageInfoText: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

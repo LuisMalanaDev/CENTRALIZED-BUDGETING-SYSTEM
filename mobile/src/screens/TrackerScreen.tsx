@@ -58,8 +58,17 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
     fetchOrders();
   };
 
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 8;
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter]);
+
   const totalSpent = orders.reduce((acc, o) => acc + (o.amount || 0), 0);
   const inTransitCount = orders.filter((o) => o.status === 'IN_TRANSIT' || o.status === 'TO_SHIP').length;
+  const totalPages = Math.max(1, Math.ceil(orders.length / PAGE_SIZE));
+  const paginatedOrders = orders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <ScrollView
@@ -117,48 +126,106 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
         </View>
       ) : (
         <View style={styles.list}>
-          {orders.map((o) => (
-            <View key={o.id} style={styles.orderCard}>
-              <View style={styles.orderTop}>
-                <View style={styles.platformBadge}>
-                  <Ionicons
-                    name={
-                      o.platform === 'GROCERY'
-                        ? 'basket-outline'
-                        : 'bag-handle-outline'
-                    }
-                    size={13}
-                    color={Colors.white}
-                  />
-                  <Text style={styles.platformText}>{o.platform}</Text>
+          {paginatedOrders.map((o) => {
+            let platformIcon: any = 'bag-handle-outline';
+            if (o.platform === 'GROCERY') platformIcon = 'basket-outline';
+            else if (o.platform === 'GOOGLE_PLAY') platformIcon = 'logo-google-playstore';
+            else if (o.platform === 'STEAM') platformIcon = 'game-controller-outline';
+            else if (o.platform === 'ROBLOX') platformIcon = 'cube-outline';
+
+            return (
+              <View key={o.id} style={styles.orderCard}>
+                <View style={styles.orderTop}>
+                  <View style={styles.platformBadge}>
+                    <Ionicons
+                      name={platformIcon}
+                      size={13}
+                      color={Colors.white}
+                    />
+                    <Text style={styles.platformText}>
+                      {o.platform === 'GOOGLE_PLAY' ? 'GOOGLE PLAY' : o.platform}
+                    </Text>
+                  </View>
+
+                  <View style={styles.statusBadge}>
+                    <Text style={styles.statusText}>{o.status}</Text>
+                  </View>
                 </View>
 
-                <View style={styles.statusBadge}>
-                  <Text style={styles.statusText}>{o.status}</Text>
+                <Text style={styles.itemsTitle} numberOfLines={2}>
+                  {o.items || o.merchant || 'Package'}
+                </Text>
+
+                {o.trackingNumber ? (
+                  <Text style={styles.trackingText}>
+                    Tracking / Ref: {o.trackingNumber}
+                  </Text>
+                ) : null}
+
+                <View style={styles.orderBottom}>
+                  <Text style={styles.orderDate}>
+                    {new Date(o.orderDate).toLocaleDateString()}
+                  </Text>
+                  <Text style={styles.orderAmount}>
+                    {currencySymbol}
+                    {o.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </Text>
                 </View>
               </View>
+            );
+          })}
 
-              <Text style={styles.itemsTitle} numberOfLines={2}>
-                {o.items || o.merchant || 'Package'}
+          {/* Pagination Controls */}
+          {orders.length > PAGE_SIZE && (
+            <View style={styles.paginationRow}>
+              <TouchableOpacity
+                style={[styles.pageBtn, page === 1 && styles.pageBtnDisabled]}
+                disabled={page === 1}
+                onPress={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <Ionicons
+                  name="chevron-back"
+                  size={16}
+                  color={page === 1 ? Colors.textMuted : Colors.white}
+                />
+                <Text
+                  style={[
+                    styles.pageBtnText,
+                    page === 1 && styles.pageBtnTextDisabled,
+                  ]}
+                >
+                  Prev
+                </Text>
+              </TouchableOpacity>
+
+              <Text style={styles.pageInfoText}>
+                Page {page} of {totalPages} • {orders.length} items
               </Text>
 
-              {o.trackingNumber ? (
-                <Text style={styles.trackingText}>
-                  Tracking: {o.trackingNumber}
+              <TouchableOpacity
+                style={[
+                  styles.pageBtn,
+                  page === totalPages && styles.pageBtnDisabled,
+                ]}
+                disabled={page === totalPages}
+                onPress={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                <Text
+                  style={[
+                    styles.pageBtnText,
+                    page === totalPages && styles.pageBtnTextDisabled,
+                  ]}
+                >
+                  Next
                 </Text>
-              ) : null}
-
-              <View style={styles.orderBottom}>
-                <Text style={styles.orderDate}>
-                  {new Date(o.orderDate).toLocaleDateString()}
-                </Text>
-                <Text style={styles.orderAmount}>
-                  {currencySymbol}
-                  {o.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </Text>
-              </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={16}
+                  color={page === totalPages ? Colors.textMuted : Colors.white}
+                />
+              </TouchableOpacity>
             </View>
-          ))}
+          )}
         </View>
       )}
     </ScrollView>
@@ -329,5 +396,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: Colors.white,
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 18,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  pageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  pageBtnDisabled: {
+    opacity: 0.35,
+  },
+  pageBtnText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pageBtnTextDisabled: {
+    color: Colors.textMuted,
+  },
+  pageInfoText: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

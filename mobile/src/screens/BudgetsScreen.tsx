@@ -22,6 +22,9 @@ export const BudgetsScreen: React.FC = () => {
   const [vaults, setVaults] = useState<SavingsVault[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [budgetPage, setBudgetPage] = useState(1);
+  const [vaultPage, setVaultPage] = useState(1);
+  const PAGE_SIZE = 6;
 
   const currencySymbol = user?.currency === 'USD' ? '$' : '₱';
 
@@ -53,6 +56,12 @@ export const BudgetsScreen: React.FC = () => {
   const totalBudget = budgets.reduce((acc, b) => acc + (b.limit ?? b.amount ?? 0), 0);
   const totalSpent = budgets.reduce((acc, b) => acc + (b.spent || 0), 0);
   const totalVaultsSaved = vaults.reduce((acc, v) => acc + (v.currentAmount || 0), 0);
+
+  const totalBudgetPages = Math.max(1, Math.ceil(budgets.length / PAGE_SIZE));
+  const paginatedBudgets = budgets.slice((budgetPage - 1) * PAGE_SIZE, budgetPage * PAGE_SIZE);
+
+  const totalVaultPages = Math.max(1, Math.ceil(vaults.length / PAGE_SIZE));
+  const paginatedVaults = vaults.slice((vaultPage - 1) * PAGE_SIZE, vaultPage * PAGE_SIZE);
 
   return (
     <ScrollView
@@ -131,7 +140,7 @@ export const BudgetsScreen: React.FC = () => {
             </View>
           ) : (
             <View style={styles.cardsList}>
-              {budgets.map((b) => {
+              {paginatedBudgets.map((b) => {
                 const capLimit = b.limit ?? b.amount ?? 0;
                 const percent = Math.min(100, Math.round(((b.spent || 0) / (capLimit || 1)) * 100));
                 const catName = getCategoryName(b.category, b.name || 'Budget Cap');
@@ -160,6 +169,45 @@ export const BudgetsScreen: React.FC = () => {
                   </View>
                 );
               })}
+
+              {/* Budget Pagination Controls */}
+              {budgets.length > PAGE_SIZE && (
+                <View style={styles.paginationRow}>
+                  <TouchableOpacity
+                    style={[styles.pageBtn, budgetPage === 1 && styles.pageBtnDisabled]}
+                    disabled={budgetPage === 1}
+                    onPress={() => setBudgetPage((p) => Math.max(1, p - 1))}
+                  >
+                    <Ionicons
+                      name="chevron-back"
+                      size={16}
+                      color={budgetPage === 1 ? Colors.textMuted : Colors.white}
+                    />
+                    <Text style={[styles.pageBtnText, budgetPage === 1 && styles.pageBtnTextDisabled]}>
+                      Prev
+                    </Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.pageInfoText}>
+                    Page {budgetPage} of {totalBudgetPages} • {budgets.length} caps
+                  </Text>
+
+                  <TouchableOpacity
+                    style={[styles.pageBtn, budgetPage === totalBudgetPages && styles.pageBtnDisabled]}
+                    disabled={budgetPage === totalBudgetPages}
+                    onPress={() => setBudgetPage((p) => Math.min(totalBudgetPages, p + 1))}
+                  >
+                    <Text style={[styles.pageBtnText, budgetPage === totalBudgetPages && styles.pageBtnTextDisabled]}>
+                      Next
+                    </Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={16}
+                      color={budgetPage === totalBudgetPages ? Colors.textMuted : Colors.white}
+                    />
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -187,7 +235,7 @@ export const BudgetsScreen: React.FC = () => {
             </View>
           ) : (
             <View style={styles.cardsList}>
-              {vaults.map((v) => {
+              {paginatedVaults.map((v) => {
                 const percent = Math.min(
                   100,
                   Math.round(((v.currentAmount || 0) / (v.targetAmount || 1)) * 100)
@@ -219,6 +267,45 @@ export const BudgetsScreen: React.FC = () => {
                   </View>
                 );
               })}
+
+              {/* Vaults Pagination Controls */}
+              {vaults.length > PAGE_SIZE && (
+                <View style={styles.paginationRow}>
+                  <TouchableOpacity
+                    style={[styles.pageBtn, vaultPage === 1 && styles.pageBtnDisabled]}
+                    disabled={vaultPage === 1}
+                    onPress={() => setVaultPage((p) => Math.max(1, p - 1))}
+                  >
+                    <Ionicons
+                      name="chevron-back"
+                      size={16}
+                      color={vaultPage === 1 ? Colors.textMuted : Colors.white}
+                    />
+                    <Text style={[styles.pageBtnText, vaultPage === 1 && styles.pageBtnTextDisabled]}>
+                      Prev
+                    </Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.pageInfoText}>
+                    Page {vaultPage} of {totalVaultPages} • {vaults.length} vaults
+                  </Text>
+
+                  <TouchableOpacity
+                    style={[styles.pageBtn, vaultPage === totalVaultPages && styles.pageBtnDisabled]}
+                    disabled={vaultPage === totalVaultPages}
+                    onPress={() => setVaultPage((p) => Math.min(totalVaultPages, p + 1))}
+                  >
+                    <Text style={[styles.pageBtnText, vaultPage === totalVaultPages && styles.pageBtnTextDisabled]}>
+                      Next
+                    </Text>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={16}
+                      color={vaultPage === totalVaultPages ? Colors.textMuted : Colors.white}
+                    />
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -377,5 +464,41 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 240,
     lineHeight: 18,
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 18,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  pageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  pageBtnDisabled: {
+    opacity: 0.35,
+  },
+  pageBtnText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pageBtnTextDisabled: {
+    color: Colors.textMuted,
+  },
+  pageInfoText: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
