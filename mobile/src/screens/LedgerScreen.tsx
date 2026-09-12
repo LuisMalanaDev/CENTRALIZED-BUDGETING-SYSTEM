@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -32,8 +33,9 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'ALL' | 'EXPENSE' | 'INCOME'>('ALL');
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
   const currencySymbol = user?.currency === 'USD' ? '$' : '₱';
 
@@ -43,9 +45,9 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
       if (filter.startDate && filter.endDate) {
         query = `?startDate=${filter.startDate}&endDate=${filter.endDate}`;
       }
-      const res = await api.get<{ transactions: Transaction[] }>(
-        `/api/transactions${query}`
-      );
+      const res = await api.get<{ transactions: Transaction[] }>(`/api/transactions${query}`).catch(() => ({
+        transactions: [],
+      }));
       setTransactions(res.transactions || []);
     } catch (e) {
       console.warn('Ledger fetch error:', e);
@@ -72,10 +74,24 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
   }, [search, typeFilter, filter]);
 
   const filteredTransactions = transactions.filter((tx) => {
-    // Type filter
+    // 1. Exclude online orders and email-synced receipts (these belong exclusively in Tracker)
+    const isOnlineReceipt =
+      tx.isShopeeOrder ||
+      tx.source?.toLowerCase().includes('email') ||
+      tx.source?.toLowerCase().includes('sync') ||
+      tx.source?.toLowerCase().includes('shopee') ||
+      tx.source?.toLowerCase().includes('lazada') ||
+      tx.source?.toLowerCase().includes('google play') ||
+      tx.tags?.some((t) =>
+        ['Shopee', 'Lazada', 'Google Play', 'Steam', 'Roblox', 'Parcel', 'Online Orders', 'Email Auto-Forward'].includes(t)
+      );
+
+    if (isOnlineReceipt) return false;
+
+    // 2. Type filter (+Log Inflow vs Expense)
     if (typeFilter !== 'ALL' && tx.type !== typeFilter) return false;
 
-    // Search query
+    // 3. Search query
     if (search.trim()) {
       const q = search.toLowerCase();
       const matchCat = getCategoryName(tx.category, '').toLowerCase().includes(q);
@@ -93,10 +109,11 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
   );
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
+    <View style={styles.root}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
         <RefreshControl
           refreshing={refreshing}
           onRefresh={onRefresh}
@@ -182,7 +199,12 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
             });
 
             return (
-              <View key={tx.id} style={styles.txCard}>
+              <TouchableOpacity
+                key={tx.id}
+                style={styles.txCard}
+                activeOpacity={0.7}
+                onPress={() => setSelectedTx(tx)}
+              >
                 <View style={styles.txCardTop}>
                   <View style={styles.txCategoryBox}>
                     <Ionicons
@@ -221,7 +243,7 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
                   </View>
                   <Text style={styles.txDateText}>{dateFormatted}</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })}
 
@@ -279,10 +301,102 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
         </View>
       )}
     </ScrollView>
+
+    {/* Transaction Details Modal */}
+    <Modal
+      visible={!!selectedTx}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setSelectedTx(null)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalHeaderLeft}>
+              <Ionicons
+                name={selectedTx?.type === 'INCOME' ? 'arrow-down-circle' : 'arrow-up-circle'}
+                size={22}
+                color={Colors.white}
+              />
+              <Text style={styles.modalTitle}>Transaction Details</Text>
+            </View>
+            <TouchableOpacity onPress={() => setSelectedTx(null)} style={styles.modalCloseBtn}>
+              <Ionicons name="close" size={20} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {selectedTx && (
+            <View style={styles.modalBody}>
+              <View style={styles.heroAmountBox}>
+                <Text
+                  style={[
+                    styles.heroAmountText,
+                    selectedTx.type === 'INCOME' ? styles.txAmountIncome : styles.txAmountExpense,
+                  ]}
+                >
+                  {selectedTx.type === 'INCOME' ? '+' : '−'}
+                  {currencySymbol}
+                  {selectedTx.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </Text>
+                <View style={styles.heroBadge}>
+                  <Text style={styles.heroBadgeText}>
+                    {selectedTx.type === 'INCOME' ? 'Custom Cash Inflow' : 'Custom Expense'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.modalDetailsList}>
+                <View style={styles.modalDetailRow}>
+                  <Text style={styles.modalDetailLabel}>Category</Text>
+                  <Text style={styles.modalDetailValue}>{getCategoryName(selectedTx.category)}</Text>
+                </View>
+
+                <View style={styles.modalDetailRow}>
+                  <Text style={styles.modalDetailLabel}>Payment Method</Text>
+                  <Text style={styles.modalDetailValue}>{selectedTx.paymentMethod}</Text>
+                </View>
+
+                <View style={styles.modalDetailRow}>
+                  <Text style={styles.modalDetailLabel}>Date & Time</Text>
+                  <Text style={styles.modalDetailValue}>
+                    {new Date(selectedTx.date).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                </View>
+
+                {selectedTx.description ? (
+                  <View style={styles.modalDetailStacked}>
+                    <Text style={styles.modalDetailLabel}>Description / Notes</Text>
+                    <Text style={styles.modalDetailNote}>{selectedTx.description}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <TouchableOpacity
+                style={styles.modalDoneBtn}
+                onPress={() => setSelectedTx(null)}
+              >
+                <Text style={styles.modalDoneBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -481,5 +595,114 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 11,
     fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: Colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 22,
+    maxWidth: 400,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalBody: {
+    gap: 16,
+  },
+  heroAmountBox: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    backgroundColor: Colors.surfaceSubtle,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  heroAmountText: {
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  heroBadge: {
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  heroBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  modalDetailsList: {
+    gap: 12,
+  },
+  modalDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  modalDetailStacked: {
+    gap: 4,
+    paddingTop: 4,
+  },
+  modalDetailLabel: {
+    fontSize: 12,
+    color: Colors.textMuted,
+  },
+  modalDetailValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  modalDetailNote: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    lineHeight: 18,
+    backgroundColor: Colors.surfaceSubtle,
+    padding: 10,
+    borderRadius: 8,
+  },
+  modalDoneBtn: {
+    backgroundColor: Colors.white,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  modalDoneBtnText: {
+    color: Colors.black,
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

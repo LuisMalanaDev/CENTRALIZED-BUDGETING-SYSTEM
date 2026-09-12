@@ -58,6 +58,9 @@ export async function trackerRoutes(fastify: FastifyInstance) {
             merchant: t.description,
             items: t.description,
             amount: Number(t.amount),
+            paymentMethod: t.paymentMethod || undefined,
+            notes: t.notes || undefined,
+            source: t.source || undefined,
             status,
             orderDate: t.date.toISOString(),
           };
@@ -84,6 +87,9 @@ export async function trackerRoutes(fastify: FastifyInstance) {
             merchant: t.description,
             items: t.description,
             amount: Number(t.amount),
+            paymentMethod: t.paymentMethod || undefined,
+            notes: t.notes || undefined,
+            source: t.source || undefined,
             status: (platform === 'GOOGLE_PLAY' || platform === 'STEAM' ? 'DELIVERED' : 'IN_TRANSIT') as any,
             orderDate: (t.date instanceof Date ? t.date : new Date(t.date)).toISOString(),
           };

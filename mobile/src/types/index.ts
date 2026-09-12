@@ -27,6 +27,10 @@ export interface Transaction {
   paymentMethod: PaymentMethod | string;
   account?: string | { id?: string; name: string; type?: string; color?: string };
   status?: string;
+  source?: string;
+  isShopeeOrder?: boolean;
+  tags?: string[];
+  orderTrackingNumber?: string;
 }
 
 export interface Account {
@@ -67,6 +71,9 @@ export interface TrackerOrder {
   status: 'PENDING' | 'TO_SHIP' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED' | 'COMPLETED';
   orderDate: string;
   deliveryDate?: string;
+  paymentMethod?: string;
+  notes?: string;
+  source?: string;
 }
 
 export interface DateRangeFilter {
