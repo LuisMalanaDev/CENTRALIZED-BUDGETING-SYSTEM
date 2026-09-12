@@ -65,21 +65,14 @@ export default function LandingPage() {
             grocery bills, and Shopee parcels with a 5-second entry engine and smart statement ingestion.
           </p>
 
-          {/* Primary CTA Buttons */}
-          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link
-              href="/register"
-              className="w-full sm:w-auto px-8 py-4 rounded-2xl text-base font-semibold text-white bg-black hover:bg-neutral-800 dark:text-black dark:bg-white dark:hover:bg-neutral-200 shadow-sm transition-all flex items-center justify-center gap-2 group"
-            >
-              <span>Get Started Free</span>
-              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-            </Link>
-
+          {/* Primary CTA Button */}
+          <div className="mt-10 flex items-center justify-center">
             <Link
               href="/login"
-              className="w-full sm:w-auto px-8 py-4 rounded-2xl text-base font-semibold text-neutral-800 dark:text-neutral-200 bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-all flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-8 py-4 rounded-2xl text-base font-semibold text-white bg-black hover:bg-neutral-800 dark:text-black dark:bg-white dark:hover:bg-neutral-200 shadow-sm transition-all flex items-center justify-center gap-2 group"
             >
-              <span>Log In</span>
+              <span>Log In to Command Center</span>
+              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
             </Link>
           </div>
 
