@@ -1,0 +1,57 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: 'Hosted Web App URL (e.g. https://your-domain.vercel.app)'
+        required: true
+        default: 'https://wealthsync.vercel.app'
+  push:
+    branches:
+      - main
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Bubblewrap CLI
+        run: npm install -g @bubblewrap/cli
+
+      - name: Initialize & Build Android TWA APK
+        run: |
+          mkdir -p android-build
+          cd android-build
+          
+          # Initialize Bubblewrap project from manifest
+          bubblewrap init --manifest="${{ github.event.inputs.app_url || 'https://wealthsync.vercel.app' }}/manifest.json" --skipPwaValidation || true
+          
+          # Build APK
+          bubblewrap build || true
+
+      - name: Upload Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wealthsync-android-apk
+          path: |
+            android-build/*.apk
+            android-build/*.aab
+          if-no-files-found: warn

@@ -1,0 +1,19 @@
+{
+  "name": "wealthsync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "WealthSync - Centralized Personal Finance & Lifestyle Expense Management",
+  "scripts": {
+    "dev": "pnpm --parallel --filter backend --filter frontend dev",
+    "dev:backend": "pnpm --filter backend dev",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "build": "pnpm --filter backend build && pnpm --filter frontend build",
+    "start": "pnpm --filter backend start",
+    "prisma:generate": "pnpm --filter backend prisma:generate",
+    "prisma:migrate": "pnpm --filter backend prisma:migrate",
+    "prisma:seed": "pnpm --filter backend prisma:seed"
+  },
+  "keywords": ["finance", "budgeting", "wealthsync", "fastify", "nextjs", "prisma"],
+  "author": "",
+  "license": "MIT"
+}
