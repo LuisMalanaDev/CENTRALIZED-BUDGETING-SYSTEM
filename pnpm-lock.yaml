@@ -22,6 +22,12 @@ importers:
       '@prisma/client':
         specifier: ^6.4.1
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+      '@types/bcryptjs':
+        specifier: ^2.4.6
+        version: 2.4.6
+      '@types/node':
+        specifier: ^22.13.4
+        version: 22.20.2
       bcryptjs:
         specifier: ^3.0.2
         version: 3.0.3
@@ -31,25 +37,19 @@ importers:
       fastify:
         specifier: ^5.2.1
         version: 5.12.4
+      prisma:
+        specifier: ^6.4.1
+        version: 6.19.3(typescript@5.9.3)
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
       zod:
         specifier: ^3.24.2
         version: 3.25.76
     devDependencies:
-      '@types/bcryptjs':
-        specifier: ^2.4.6
-        version: 2.4.6
-      '@types/node':
-        specifier: ^22.13.4
-        version: 22.20.2
-      prisma:
-        specifier: ^6.4.1
-        version: 6.19.3(typescript@5.9.3)
       tsx:
         specifier: ^4.19.3
         version: 4.23.13
-      typescript:
-        specifier: ^5.7.3
-        version: 5.9.3
 
   frontend:
     dependencies:
