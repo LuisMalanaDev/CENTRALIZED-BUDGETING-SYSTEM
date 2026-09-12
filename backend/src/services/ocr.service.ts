@@ -23,25 +23,25 @@ export class OCRService {
       ? base64Image.split('base64,')[1]
       : base64Image;
 
-    let extractedText = '';
-
     // 1. Try Gemini Vision if API key is provided
     const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
     if (geminiKey) {
       try {
-        extractedText = await this.callGeminiVision(cleanBase64, geminiKey);
+        const geminiResult = await this.scanWithGemini(cleanBase64, geminiKey);
+        if (geminiResult && (geminiResult.amount || geminiResult.merchant)) {
+          return geminiResult;
+        }
       } catch (e) {
         console.warn('Gemini OCR fallback failed, falling back to standard OCR:', e);
       }
     }
 
-    // 2. If Gemini didn't run or returned empty, call Free OCR Engine (OCR.space)
-    if (!extractedText) {
-      try {
-        extractedText = await this.callOcrSpace(cleanBase64);
-      } catch (e) {
-        console.warn('OCR.space call failed:', e);
-      }
+    // 2. Fallback to Free OCR Engine (OCR.space)
+    let extractedText = '';
+    try {
+      extractedText = await this.callOcrSpace(cleanBase64);
+    } catch (e) {
+      console.warn('OCR.space call failed:', e);
     }
 
     // 3. Parse receipt text with specialized retail regex
@@ -49,39 +49,84 @@ export class OCRService {
   }
 
   /**
-   * Calls Google Gemini Vision for intelligent receipt understanding
+   * Calls Google Gemini Vision for intelligent structured receipt parsing
    */
-  private static async callGeminiVision(base64Image: string, apiKey: string): Promise<string> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
+  private static async scanWithGemini(base64Image: string, apiKey: string): Promise<ParsedReceiptData | null> {
+    const modelsToTry = [
+      process.env.GEMINI_MODEL,
+      'gemini-3.6-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-flash-latest',
+    ].filter(Boolean) as string[];
+
+    const prompt = `Analyze this physical paper receipt image.
+Extract:
+1. "merchant": the clean store name (e.g., Savemore, Jollibee, McDonald's, 7-Eleven, Puregold, SM Supermarket, Mercury Drug, Petron, Shell).
+2. "amount": the FINAL TOTAL amount due or paid as a numeric number (float/int). Do NOT use single item price, cash tendered, change, or subtotal.
+3. "category": one of: "Food & Dining Out", "Groceries & Supermarket", "Transportation", "Bills & Utilities", "Entertainment", "Personal Care", or "Other Expense".
+4. "paymentMethod": one of: "CASH", "GCASH", "MAYA", "CREDIT_CARD", or "OTHER".
+Return strictly valid JSON with keys: merchant, amount, category, paymentMethod.`;
+
+    for (const model of modelsToTry) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
               {
-                text: 'Extract all text from this receipt. Include merchant name, all line items, totals, subtotal, VAT, cash/card payment method, and date.',
-              },
-              {
-                inline_data: {
-                  mime_type: 'image/jpeg',
-                  data: base64Image,
-                },
+                parts: [
+                  { text: prompt },
+                  {
+                    inline_data: {
+                      mime_type: 'image/jpeg',
+                      data: base64Image,
+                    },
+                  },
+                ],
               },
             ],
-          },
-        ],
-      }),
-    });
+            generationConfig: {
+              response_mime_type: 'application/json',
+              temperature: 0.1,
+            },
+          }),
+        });
 
-    if (!response.ok) {
-      throw new Error(`Gemini API error ${response.status}`);
+        if (!response.ok) {
+          continue;
+        }
+
+        const data = (await response.json()) as any;
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) continue;
+
+        const parsed = JSON.parse(text);
+        const parsedAmount = typeof parsed.amount === 'number' ? parsed.amount : (parseFloat(parsed.amount) || null);
+        let pm: 'CASH' | 'GCASH' | 'MAYA' | 'CREDIT_CARD' | 'OTHER' = 'CASH';
+        const pmUpper = (parsed.paymentMethod || '').toUpperCase();
+        if (pmUpper.includes('GCASH')) pm = 'GCASH';
+        else if (pmUpper.includes('MAYA')) pm = 'MAYA';
+        else if (pmUpper.includes('CARD') || pmUpper.includes('VISA') || pmUpper.includes('MASTER') || pmUpper.includes('DEBIT')) pm = 'CREDIT_CARD';
+        else if (pmUpper.includes('CASH')) pm = 'CASH';
+
+        if (parsedAmount || parsed.merchant) {
+          return {
+            success: true,
+            amount: parsedAmount,
+            merchant: parsed.merchant || null,
+            category: parsed.category || 'Groceries & Supermarket',
+            paymentMethod: pm,
+            rawText: text,
+            notes: `Extracted via Gemini AI Vision (${model})`,
+          };
+        }
+      } catch (err) {
+        console.warn(`Gemini model ${model} attempt failed:`, err);
+      }
     }
-
-    const data = (await response.json()) as any;
-    const candidate = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    return candidate || '';
+    return null;
   }
 
   /**
@@ -201,10 +246,10 @@ export class OCRService {
 
     // Highest priority: "Total Due", "Total Amount", "Grand Total", "Amount Due", "Net Total"
     const totalRegexes = [
-      /(?:total\s*(?:due|amount|sales|bill)?|grand\s*total|amount\s*due|net\s*total|total)\s*[:=]?\s*(?:php|p|₱)?\s*([0-9,]+\.[0-9]{2})/i,
-      /(?:total\s*(?:due|amount|sales|bill)?|grand\s*total|amount\s*due|net\s*total|total)\s*[:=]?\s*(?:php|p|₱)?\s*([0-9,]+)/i,
-      /(?:cash\s*tendered|tendered|cash)\s*[:=]?\s*(?:php|p|₱)?\s*([0-9,]+\.[0-9]{2})/i,
-      /(?:php|₱)\s*([0-9,]+\.[0-9]{2})/i,
+      /(?:total\s*(?:due|amount|sales|bill)?|grand\s*total|amount\s*due|net\s*total)\s*[:=]?\s*(?:php|p|₱)?\s*([0-9,]+\.[0-9]{2})/i,
+      /\btotal\b\s*[:=]?\s*(?:php|p|₱)?\s*([0-9,]+\.[0-9]{2})/i,
+      /(?:subtotal|sub\s*total)\s*[:=]?\s*(?:php|p|₱)?\s*([0-9,]+\.[0-9]{2})/i,
+      /(?:cash\s*tendered|tendered)\s*[:=]?\s*(?:php|p|₱)?\s*([0-9,]+\.[0-9]{2})/i,
     ];
 
     for (const reg of totalRegexes) {
