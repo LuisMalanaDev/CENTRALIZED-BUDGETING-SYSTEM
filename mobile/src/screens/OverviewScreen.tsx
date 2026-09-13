@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { Colors } from '../constants/theme';
 import { api } from '../api/client';
 import { DateFilterBar } from '../components/DateFilterBar';
+import { ProfileModal } from '../components/ProfileModal';
 import { DateRangeFilter, Transaction, Account } from '../types';
 import { getCategoryName } from '../utils/format';
 
@@ -109,6 +110,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
     fetchData();
   };
 
+  const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [walletModalVisible, setWalletModalVisible] = useState(false);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [balanceInput, setBalanceInput] = useState('');
@@ -185,10 +187,24 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
     >
       {/* Top Bar */}
       <View style={styles.topBar}>
-        <View>
-          <Text style={styles.welcomeText}>Welcome back,</Text>
-          <Text style={styles.userName}>{user?.name || 'Commander'}</Text>
-        </View>
+        <TouchableOpacity
+          style={styles.welcomeContainer}
+          onPress={() => setProfileModalVisible(true)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.topAvatar}>
+            <Text style={styles.topAvatarText}>
+              {(user?.name || user?.email || 'WS').slice(0, 2).toUpperCase()}
+            </Text>
+          </View>
+          <View>
+            <Text style={styles.welcomeText}>Welcome back,</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={styles.userName}>{user?.name || 'Commander'}</Text>
+              <Ionicons name="chevron-forward" size={13} color={Colors.textMuted} />
+            </View>
+          </View>
+        </TouchableOpacity>
 
         <View style={styles.topBarActions}>
           <View style={styles.liveIndicator}>
@@ -196,11 +212,11 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
             <Text style={styles.liveText}>Cloud Live</Text>
           </View>
           <TouchableOpacity
-            style={styles.logoutBtn}
-            onPress={logout}
-            accessibilityLabel="Log out"
+            style={styles.profileBtn}
+            onPress={() => setProfileModalVisible(true)}
+            accessibilityLabel="View Profile Credentials"
           >
-            <Ionicons name="log-out-outline" size={18} color={Colors.textSecondary} />
+            <Ionicons name="person-outline" size={17} color={Colors.white} />
           </TouchableOpacity>
         </View>
       </View>
@@ -567,6 +583,14 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* User Profile & Credentials Modal */}
+      <ProfileModal
+        visible={profileModalVisible}
+        onClose={() => setProfileModalVisible(false)}
+        user={user}
+        onLogout={logout}
+      />
     </ScrollView>
   );
 };
@@ -579,7 +603,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 100,
+    paddingBottom: 120,
   },
   topBar: {
     flexDirection: 'row',
@@ -587,13 +611,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
+  welcomeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  topAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#1E293B',
+    borderWidth: 1.5,
+    borderColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topAvatarText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.white,
+  },
   welcomeText: {
     fontSize: 12,
     color: Colors.textMuted,
     fontWeight: '500',
   },
   userName: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
     color: Colors.white,
     letterSpacing: -0.3,
@@ -624,6 +668,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: Colors.textSecondary,
+  },
+  profileBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   logoutBtn: {
     width: 32,
