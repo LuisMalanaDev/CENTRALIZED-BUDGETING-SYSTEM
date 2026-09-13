@@ -39,9 +39,19 @@ export class EmailParserService {
       return this.parseGooglePlayEmail(subject, body, `${subject}\n${body}`);
     }
 
-    // 4. Steam
+    // 4. Steam (Ignored per user preference)
     if (combined.includes('steampowered') || combined.includes('steam')) {
-      return this.parseSteamEmail(subject, body, `${subject}\n${body}`);
+      return {
+        description: 'Ignored Steam Notification',
+        amount: 0,
+        date: new Date().toISOString(),
+        paymentMethod: 'OTHER',
+        source: 'Steam',
+        tags: [],
+        suggestedCategorySlug: 'general',
+        isShopeeOrder: false,
+        rawText: combined.substring(0, 200),
+      };
     }
 
     // 5. Roblox (Direct roblox.com emails)
@@ -139,36 +149,7 @@ export class EmailParserService {
     };
   }
 
-  // --- STEAM ---
-  private static parseSteamEmail(subject: string, body: string, combined: string): ParsedTransactionDraft {
-    const amountMatch =
-      combined.match(/(?:Total|Subtotal)\s*[:=]?\s*(?:₱|PHP|Php|\$)?\s*([\d,]+\.?\d{0,2})/i) ||
-      combined.match(/(?:₱|PHP|Php)\s*([\d,]+\.?\d{0,2})/i);
-    const amount = amountMatch ? this.extractNumeric(amountMatch[1]) : 0;
 
-    // Try to extract game title
-    let description = 'Steam Game Purchase';
-    const gameMatch =
-      body.match(/(?:Account Name:[^\n\r]+\s+Invoice:[^\n\r]+\s+)([^\n\r]+)/i) ||
-      body.match(/(?:Thank you for your purchase\s+)([^\n\r]+)/i) ||
-      subject.match(/Thank you for your (?:Steam )?purchase(?: of )?([^\n\r]+)?/i);
-
-    if (gameMatch && gameMatch[1]?.trim()) {
-      description = `Steam - ${gameMatch[1].trim()}`;
-    }
-
-    return {
-      description,
-      amount: amount > 0 ? amount : 1200.0,
-      date: new Date().toISOString(),
-      paymentMethod: combined.toLowerCase().includes('gcash') ? 'GCASH' : 'CREDIT_CARD',
-      source: 'Steam (Email Sync)',
-      tags: ['Steam', 'Gaming', 'Entertainment'],
-      suggestedCategorySlug: 'freelance', // falls back to entertainment/general
-      isShopeeOrder: false,
-      rawText: combined.substring(0, 500),
-    };
-  }
 
   // --- ROBLOX ---
   private static parseRobloxEmail(subject: string, body: string, combined: string): ParsedTransactionDraft {

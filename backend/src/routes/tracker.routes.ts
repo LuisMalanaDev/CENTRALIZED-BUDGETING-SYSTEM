@@ -33,7 +33,6 @@ export async function trackerRoutes(fastify: FastifyInstance) {
                   'Parcel',
                   'Google Play',
                   'Roblox',
-                  'Steam',
                   'FoodPanda',
                   'GrabFood',
                   'Food Delivery',
@@ -59,7 +58,7 @@ export async function trackerRoutes(fastify: FastifyInstance) {
         });
 
         return transactions.map((t) => {
-          let platform: 'SHOPEE' | 'LAZADA' | 'TIKTOK' | 'GROCERY' | 'GOOGLE_PLAY' | 'STEAM' | 'ROBLOX' | 'FOODPANDA' | 'OTHER' = 'OTHER';
+          let platform: 'SHOPEE' | 'LAZADA' | 'TIKTOK' | 'GROCERY' | 'GOOGLE_PLAY' | 'ROBLOX' | 'FOODPANDA' | 'OTHER' = 'OTHER';
           const lower = (t.description + ' ' + (t.source || '') + ' ' + (t.tags || []).join(' ')).toLowerCase();
           if (t.isShopeeOrder || lower.includes('shopee')) platform = 'SHOPEE';
           else if (lower.includes('lazada')) platform = 'LAZADA';
@@ -68,10 +67,9 @@ export async function trackerRoutes(fastify: FastifyInstance) {
           else if (lower.includes('grocery') || lower.includes('supermarket')) platform = 'GROCERY';
           else if (lower.includes('google play') || lower.includes('googleplay')) platform = 'GOOGLE_PLAY';
           else if (lower.includes('roblox') || lower.includes('robux')) platform = 'ROBLOX';
-          else if (lower.includes('steam')) platform = 'STEAM';
 
           let status: 'PENDING' | 'TO_SHIP' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED' | 'COMPLETED' = 'IN_TRANSIT';
-          if (platform === 'GOOGLE_PLAY' || platform === 'STEAM' || platform === 'ROBLOX' || platform === 'FOODPANDA') {
+          if (platform === 'GOOGLE_PLAY' || platform === 'ROBLOX' || platform === 'FOODPANDA') {
             status = 'DELIVERED';
           }
 
@@ -110,7 +108,6 @@ export async function trackerRoutes(fastify: FastifyInstance) {
                   'Parcel',
                   'Google Play',
                   'Roblox',
-                  'Steam',
                   'FoodPanda',
                   'GrabFood',
                   'Food Delivery',
@@ -130,10 +127,9 @@ export async function trackerRoutes(fastify: FastifyInstance) {
           else if (lower.includes('grocery') || lower.includes('supermarket')) platform = 'GROCERY';
           else if (lower.includes('google play') || lower.includes('googleplay')) platform = 'GOOGLE_PLAY';
           else if (lower.includes('roblox') || lower.includes('robux')) platform = 'ROBLOX';
-          else if (lower.includes('steam')) platform = 'STEAM';
 
           let status: any = 'IN_TRANSIT';
-          if (platform === 'GOOGLE_PLAY' || platform === 'STEAM' || platform === 'ROBLOX' || platform === 'FOODPANDA') {
+          if (platform === 'GOOGLE_PLAY' || platform === 'ROBLOX' || platform === 'FOODPANDA') {
             status = 'DELIVERED';
           }
 

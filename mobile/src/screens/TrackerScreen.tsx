@@ -287,7 +287,6 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
             let platformIcon: any = 'bag-handle-outline';
             if (o.platform === 'GROCERY') platformIcon = 'basket-outline';
             else if (o.platform === 'GOOGLE_PLAY') platformIcon = 'logo-google-playstore';
-            else if (o.platform === 'STEAM') platformIcon = 'game-controller-outline';
             else if (o.platform === 'ROBLOX') platformIcon = 'cube-outline';
             else if (o.platform === 'FOODPANDA') platformIcon = 'fast-food-outline';
 
@@ -410,8 +409,6 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
                     ? 'basket'
                     : selectedOrder?.platform === 'GOOGLE_PLAY'
                     ? 'logo-google-playstore'
-                    : selectedOrder?.platform === 'STEAM'
-                    ? 'game-controller'
                     : selectedOrder?.platform === 'ROBLOX'
                     ? 'cube'
                     : selectedOrder?.platform === 'FOODPANDA'
