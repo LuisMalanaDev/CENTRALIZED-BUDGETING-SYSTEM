@@ -1,9 +1,3 @@
-databases:
-  - name: wealthsync-db
-    databaseName: wealthsync
-    user: wealthsync_user
-    plan: free
-
 services:
   - type: web
     name: wealthsync-backend
@@ -13,10 +7,6 @@ services:
     buildCommand: npm install --include=dev && npm run build
     startCommand: npm run start
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: wealthsync-db
-          property: connectionString
       - key: NODE_ENV
         value: production
       - key: HOST
