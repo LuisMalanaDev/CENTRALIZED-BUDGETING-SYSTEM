@@ -30,8 +30,18 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<TrackerOrder | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
 
   const currencySymbol = user?.currency === 'USD' ? '$' : '₱';
+
+  const handleRescan = async () => {
+    setIsScanning(true);
+    try {
+      await fetchOrders();
+    } finally {
+      setTimeout(() => setIsScanning(false), 600);
+    }
+  };
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -85,16 +95,28 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
         />
       }
     >
-      {/* Title */}
+      {/* Title & Rescan Action */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Orders & Delivery Tracker</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>Orders & Delivery</Text>
           <Text style={styles.headerSub}>Auto-synced from your emails</Text>
         </View>
-        <View style={styles.autoSyncPill}>
-          <View style={styles.autoSyncDot} />
-          <Text style={styles.autoSyncText}>Auto-Sync Live</Text>
-        </View>
+
+        <TouchableOpacity
+          style={styles.rescanBtn}
+          onPress={handleRescan}
+          disabled={isScanning}
+          activeOpacity={0.8}
+        >
+          {isScanning ? (
+            <ActivityIndicator size="small" color={Colors.black} />
+          ) : (
+            <Ionicons name="sync" size={13} color={Colors.black} />
+          )}
+          <Text style={styles.rescanBtnText}>
+            {isScanning ? 'Syncing...' : 'Rescan'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Hero Stats */}
@@ -405,6 +427,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#10B981',
+  },
+  rescanBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.white,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  rescanBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.black,
   },
   heroRow: {
     flexDirection: 'row',
