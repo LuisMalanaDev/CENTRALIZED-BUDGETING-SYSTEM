@@ -39,12 +39,16 @@ class ApiClient {
     }
 
     const url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${endpoint}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 35000);
 
     try {
       const response = await fetch(url, {
         ...options,
         headers,
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         let errorMessage = 'An error occurred';
@@ -71,6 +75,10 @@ class ApiClient {
 
       return await response.json();
     } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        throw new Error('Server took too long to respond. The cloud service may be waking up, please try again.');
+      }
       if (err.message && err.message.includes('Network request failed')) {
         throw new Error('Cannot reach server. Check internet connection or backend status.');
       }

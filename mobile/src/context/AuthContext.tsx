@@ -36,8 +36,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(res.user);
             await AsyncStorage.setItem('wealthsync_user', JSON.stringify(res.user));
           }
-        } catch {
-          // Keep cached user if network temporarily unavailable
+        } catch (err: any) {
+          if (err.message && (err.message.includes('401') || err.message.includes('Unauthorized') || err.message.includes('Token expired'))) {
+            setToken(null);
+            setUser(null);
+            await AsyncStorage.removeItem('wealthsync_token');
+            await AsyncStorage.removeItem('wealthsync_user');
+          }
         }
       }
     } catch {

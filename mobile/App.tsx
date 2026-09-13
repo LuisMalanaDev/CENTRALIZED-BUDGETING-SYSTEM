@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Text, TouchableOpacity, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
@@ -115,12 +115,70 @@ const MainApp: React.FC = () => {
   );
 };
 
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  ErrorBoundaryState
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('WealthSync Unhandled Crash caught:', error, errorInfo);
+  }
+
+  handleReset = async () => {
+    try {
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      await AsyncStorage.multiRemove(['wealthsync_token', 'wealthsync_user']);
+    } catch {}
+    this.setState({ hasError: false, error: null });
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <SafeAreaView style={styles.errorContainer}>
+          <View style={styles.errorCard}>
+            <Text style={styles.errorTitle}>WealthSync Recovery</Text>
+            <Text style={styles.errorSubtitle}>
+              An unexpected error occurred while loading your session.
+            </Text>
+            <Text style={styles.errorDetails}>
+              {this.state.error?.message || 'Unknown runtime error'}
+            </Text>
+            <TouchableOpacity
+              style={styles.errorResetBtn}
+              onPress={this.handleReset}
+            >
+              <Text style={styles.errorResetBtnText}>Reset & Return to Sign In</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <MainApp />
-      </AuthProvider>
+      <ErrorBoundary>
+        <AuthProvider>
+          <MainApp />
+        </AuthProvider>
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }
@@ -148,5 +206,54 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontSize: 13,
     fontWeight: '600',
+  },
+  errorContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  errorCard: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: '#7F1D1D',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    gap: 12,
+    maxWidth: 340,
+    width: '100%',
+  },
+  errorTitle: {
+    color: Colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  errorSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  errorDetails: {
+    color: '#F87171',
+    fontSize: 12,
+    backgroundColor: '#1C1917',
+    padding: 10,
+    borderRadius: 8,
+    width: '100%',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  errorResetBtn: {
+    backgroundColor: Colors.white,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  errorResetBtnText: {
+    color: Colors.black,
+    fontWeight: '700',
+    fontSize: 14,
   },
 });

@@ -29,6 +29,9 @@
         "projectId": "08562ee6-546c-464c-b140-fd8e87bde76a"
       }
     },
-    "owner": "luismalana0428"
+    "owner": "luismalana0428",
+    "plugins": [
+      "expo-font"
+    ]
   }
 }
