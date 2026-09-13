@@ -199,13 +199,72 @@ export class EmailParserService {
 
   // --- GOOGLE PLAY ---
   private static parseGooglePlayEmail(subject: string, body: string, combined: string): ParsedTransactionDraft {
+    // 🛡️ Filter out failed payments, declined charges, subscription cancellations, or payment issues
+    if (
+      combined.includes('payment declined') ||
+      combined.includes('payment issue') ||
+      combined.includes('suspended due to payment') ||
+      combined.includes('declined for') ||
+      combined.includes('unable to process') ||
+      combined.includes('fix your payment') ||
+      combined.includes('subscription canceled') ||
+      combined.includes('subscription has ended') ||
+      combined.includes('cancellation confirmation')
+    ) {
+      return {
+        description: 'Ignored Failed/Declined Payment',
+        amount: 0,
+        date: new Date().toISOString(),
+        paymentMethod: 'OTHER',
+        source: 'Google Play',
+        tags: [],
+        suggestedCategorySlug: 'general',
+        isShopeeOrder: false,
+        rawText: combined.substring(0, 200),
+      };
+    }
+
     const orderIdMatch = combined.match(/(GPA\.[0-9]{4}-[0-9]{4}-[0-9]{4}-[0-9]{5})/i);
     const orderId = orderIdMatch ? orderIdMatch[1] : undefined;
+
+    const hasReceiptIndicator =
+      combined.includes('your google play order receipt') ||
+      combined.includes('google play order receipt') ||
+      combined.includes('thank you for your purchase') ||
+      combined.includes('you made a purchase');
+
+    if (!orderIdMatch && !hasReceiptIndicator) {
+      return {
+        description: 'Ignored Non-Receipt Google Play Email',
+        amount: 0,
+        date: new Date().toISOString(),
+        paymentMethod: 'OTHER',
+        source: 'Google Play',
+        tags: [],
+        suggestedCategorySlug: 'general',
+        isShopeeOrder: false,
+        rawText: combined.substring(0, 200),
+      };
+    }
 
     const amountMatch =
       combined.match(/(?:Total|Amount)\s*[:=]?\s*(?:₱|PHP|Php|\$)?\s*([\d,]+\.?\d{0,2})/i) ||
       combined.match(/(?:₱|PHP|Php|\$)\s*([\d,]+\.?\d{0,2})/i);
-    const amount = amountMatch ? this.extractNumeric(amountMatch[1]) : 70.0;
+    const amount = amountMatch ? this.extractNumeric(amountMatch[1]) : (orderId ? 70.0 : 0);
+
+    if (amount <= 0) {
+      return {
+        description: 'Ignored Zero-Amount Google Play Email',
+        amount: 0,
+        date: new Date().toISOString(),
+        paymentMethod: 'OTHER',
+        source: 'Google Play',
+        tags: [],
+        suggestedCategorySlug: 'general',
+        isShopeeOrder: false,
+        rawText: combined.substring(0, 200),
+      };
+    }
 
     // Extract item title (e.g. "80 Robux (Roblox)")
     let itemName = '';
@@ -296,13 +355,82 @@ export class EmailParserService {
 
   // --- FOOD DELIVERY (Grab / FoodPanda) ---
   private static parseFoodDeliveryEmail(subject: string, body: string, combined: string): ParsedTransactionDraft {
-    const amountMatch =
-      combined.match(/(?:Total|Amount)\s*[:=]?\s*(?:₱|PHP|Php)?\s*([\d,]+\.?\d{0,2})/i) ||
-      combined.match(/(?:₱|PHP|Php)\s*([\d,]+\.?\d{0,2})/i);
-    const amount = amountMatch ? this.extractNumeric(amountMatch[1]) : 350.0;
-
     const isGrab = combined.toLowerCase().includes('grab');
     const platform = isGrab ? 'GrabFood' : 'FoodPanda';
+
+    // 🛡️ Filter out marketing newsletters, promo coupons, voucher ads
+    const isPromo =
+      combined.includes('off your next order') ||
+      combined.includes('% off') ||
+      combined.includes('off!') ||
+      combined.includes('savings delivered') ||
+      combined.includes('best time to order') ||
+      combined.includes('voucher') ||
+      combined.includes('promo code') ||
+      combined.includes('deal of the day') ||
+      subject.includes('👀') ||
+      subject.includes('✨') ||
+      subject.includes('🤓') ||
+      subject.includes('😎') ||
+      subject.includes('🤔');
+
+    const isActualOrder =
+      combined.includes('your order has been placed') ||
+      combined.includes('order confirmation') ||
+      combined.includes('order has been delivered') ||
+      combined.includes('order summary') ||
+      combined.includes('order code') ||
+      combined.includes('order #');
+
+    if (isPromo && !isActualOrder) {
+      return {
+        description: 'Ignored Food Delivery Marketing Email',
+        amount: 0,
+        date: new Date().toISOString(),
+        paymentMethod: 'OTHER',
+        source: platform,
+        tags: [],
+        suggestedCategorySlug: 'food-dining',
+        isShopeeOrder: false,
+        rawText: combined.substring(0, 200),
+      };
+    }
+
+    const amountMatch =
+      combined.match(/(?:Total|Amount|Order Total)\s*[:=]?\s*(?:₱|PHP|Php)?\s*([\d,]+\.?\d{0,2})/i) ||
+      combined.match(/(?:₱|PHP|Php)\s*([\d,]+\.?\d{0,2})/i);
+
+    if (!amountMatch) {
+      return {
+        description: 'Ignored Non-Transactional Food Delivery Email',
+        amount: 0,
+        date: new Date().toISOString(),
+        paymentMethod: 'OTHER',
+        source: platform,
+        tags: [],
+        suggestedCategorySlug: 'food-dining',
+        isShopeeOrder: false,
+        rawText: combined.substring(0, 200),
+      };
+    }
+
+    const amount = this.extractNumeric(amountMatch[1]);
+    if (amount <= 0) {
+      return {
+        description: 'Ignored Zero-Amount Food Delivery Email',
+        amount: 0,
+        date: new Date().toISOString(),
+        paymentMethod: 'OTHER',
+        source: platform,
+        tags: [],
+        suggestedCategorySlug: 'food-dining',
+        isShopeeOrder: false,
+        rawText: combined.substring(0, 200),
+      };
+    }
+
+    const orderIdMatch = combined.match(/(?:Order\s*(?:ID|Number|No\.?|Code|#))\s*[:#]?\s*([A-Za-z0-9_-]{5,30})/i);
+    const trackingNumber = orderIdMatch ? orderIdMatch[1] : undefined;
 
     return {
       description: `${platform} Order`,
@@ -313,6 +441,7 @@ export class EmailParserService {
       tags: [platform, 'Food Delivery', 'Dining'],
       suggestedCategorySlug: 'food-dining',
       isShopeeOrder: false,
+      orderTrackingNumber: trackingNumber,
       rawText: combined.substring(0, 500),
     };
   }

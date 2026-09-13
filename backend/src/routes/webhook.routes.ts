@@ -107,19 +107,33 @@ export async function webhookRoutes(fastify: FastifyInstance) {
         });
       }
 
-      // 🛡️ Automatic Deduplication: Prevent Shopee "Order Placed" and "Order Delivered" double-counting
+      // 🛡️ Universal Deduplication Shield: Prevent double-counting across Shopee, Google Play, FoodPanda, etc.
+      const dedupeConditions: any[] = [];
       if (parsed.orderTrackingNumber) {
+        dedupeConditions.push({ orderTrackingNumber: parsed.orderTrackingNumber });
+      }
+      if (body.subject && parsed.amount > 0) {
+        dedupeConditions.push({
+          notes: { contains: body.subject },
+          amount: parsed.amount,
+        });
+      }
+
+      if (dedupeConditions.length > 0) {
         const existingTx = await dbSafe(
           () =>
             prisma.transaction.findFirst({
               where: {
                 userId: targetUserId,
-                orderTrackingNumber: parsed.orderTrackingNumber,
+                OR: dedupeConditions,
               },
             }),
           () =>
             mockStore.transactions.find(
-              (t) => t.userId === targetUserId && t.orderTrackingNumber === parsed.orderTrackingNumber
+              (t) =>
+                t.userId === targetUserId &&
+                ((parsed.orderTrackingNumber && t.orderTrackingNumber === parsed.orderTrackingNumber) ||
+                  (body.subject && t.notes?.includes(body.subject) && Number(t.amount) === parsed.amount))
             )
         );
 
@@ -127,7 +141,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
           return reply.status(200).send({
             success: true,
             deduplicated: true,
-            message: `Order ${parsed.orderTrackingNumber} already recorded. Prevented duplicate expense.`,
+            message: `Email receipt already recorded (${body.subject || parsed.orderTrackingNumber}). Prevented duplicate expense.`,
             transaction: existingTx,
           });
         }
