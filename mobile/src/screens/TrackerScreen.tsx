@@ -8,6 +8,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Modal,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -70,17 +71,81 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
     fetchOrders();
   };
 
+  // Price Range Filter State
+  const [selectedPriceId, setSelectedPriceId] = useState<string>('ALL');
+  const [customModalVisible, setCustomModalVisible] = useState(false);
+  const [customMin, setCustomMin] = useState('');
+  const [customMax, setCustomMax] = useState('');
+  const [appliedMin, setAppliedMin] = useState<number | null>(null);
+  const [appliedMax, setAppliedMax] = useState<number | null>(null);
+
+  const PRICE_PRESETS = [
+    { id: 'ALL', label: 'All Amounts' },
+    { id: 'UNDER_100', label: `< ${currencySymbol}100` },
+    { id: '100_500', label: `${currencySymbol}100 - 500` },
+    { id: '500_1000', label: `${currencySymbol}500 - 1K` },
+    { id: 'OVER_1000', label: `> ${currencySymbol}1,000` },
+  ];
+
+  const handleSelectPreset = (id: string) => {
+    setSelectedPriceId(id);
+    setAppliedMin(null);
+    setAppliedMax(null);
+  };
+
+  const handleApplyCustom = () => {
+    const minVal = customMin.trim() ? parseFloat(customMin) : null;
+    const maxVal = customMax.trim() ? parseFloat(customMax) : null;
+    setAppliedMin(minVal);
+    setAppliedMax(maxVal);
+    setSelectedPriceId('CUSTOM');
+    setCustomModalVisible(false);
+  };
+
+  const handleResetPriceFilter = () => {
+    setSelectedPriceId('ALL');
+    setCustomMin('');
+    setCustomMax('');
+    setAppliedMin(null);
+    setAppliedMax(null);
+    setCustomModalVisible(false);
+  };
+
+  let customLabel = 'Custom Range';
+  if (appliedMin !== null && appliedMax !== null) {
+    customLabel = `${currencySymbol}${appliedMin} - ${currencySymbol}${appliedMax}`;
+  } else if (appliedMin !== null) {
+    customLabel = `≥ ${currencySymbol}${appliedMin}`;
+  } else if (appliedMax !== null) {
+    customLabel = `≤ ${currencySymbol}${appliedMax}`;
+  }
+
+  const filteredOrders = orders.filter((o) => {
+    const amt = Number(o.amount) || 0;
+    if (selectedPriceId === 'ALL') return true;
+    if (selectedPriceId === 'UNDER_100') return amt < 100;
+    if (selectedPriceId === '100_500') return amt >= 100 && amt <= 500;
+    if (selectedPriceId === '500_1000') return amt >= 500 && amt <= 1000;
+    if (selectedPriceId === 'OVER_1000') return amt > 1000;
+    if (selectedPriceId === 'CUSTOM') {
+      if (appliedMin !== null && amt < appliedMin) return false;
+      if (appliedMax !== null && amt > appliedMax) return false;
+      return true;
+    }
+    return true;
+  });
+
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 8;
 
   useEffect(() => {
     setPage(1);
-  }, [filter]);
+  }, [filter, selectedPriceId, appliedMin, appliedMax]);
 
-  const totalSpent = orders.reduce((acc, o) => acc + (o.amount || 0), 0);
-  const inTransitCount = orders.filter((o) => o.status === 'IN_TRANSIT' || o.status === 'TO_SHIP').length;
-  const totalPages = Math.max(1, Math.ceil(orders.length / PAGE_SIZE));
-  const paginatedOrders = orders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalSpent = filteredOrders.reduce((acc, o) => acc + (o.amount || 0), 0);
+  const inTransitCount = filteredOrders.filter((o) => o.status === 'IN_TRANSIT' || o.status === 'TO_SHIP').length;
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
+  const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <View style={styles.root}>
@@ -138,6 +203,58 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
       {/* Date Filter Bar */}
       <DateFilterBar filter={filter} onFilterChange={onFilterChange} />
 
+      {/* Price Range Filter Pills */}
+      <View style={styles.priceFilterContainer}>
+        <View style={styles.priceFilterHeader}>
+          <View style={styles.priceFilterLabelRow}>
+            <Ionicons name="pricetag-outline" size={11} color={Colors.textMuted} />
+            <Text style={styles.priceFilterLabel}>PRICE RANGE</Text>
+          </View>
+          {selectedPriceId !== 'ALL' && (
+            <TouchableOpacity onPress={handleResetPriceFilter} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.priceResetBtn}>Reset</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.priceChipsRow}
+        >
+          {PRICE_PRESETS.map((p) => {
+            const isActive = selectedPriceId === p.id;
+            return (
+              <TouchableOpacity
+                key={p.id}
+                style={[styles.priceChip, isActive && styles.priceChipActive]}
+                onPress={() => handleSelectPreset(p.id)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.priceChipText, isActive && styles.priceChipTextActive]}>
+                  {p.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+
+          <TouchableOpacity
+            style={[styles.priceChip, selectedPriceId === 'CUSTOM' && styles.priceChipActive]}
+            onPress={() => setCustomModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="options-outline"
+              size={12}
+              color={selectedPriceId === 'CUSTOM' ? Colors.black : Colors.textSecondary}
+            />
+            <Text style={[styles.priceChipText, selectedPriceId === 'CUSTOM' && styles.priceChipTextActive]}>
+              {selectedPriceId === 'CUSTOM' ? customLabel : 'Custom'}
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+
       {/* Orders List */}
       {loading ? (
         <ActivityIndicator color={Colors.white} style={{ marginVertical: 30 }} />
@@ -148,6 +265,21 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
           <Text style={styles.emptySubtext}>
             Incoming online orders (Shopee, Lazada, etc.) automatically sync from your connected email receipts.
           </Text>
+        </View>
+      ) : filteredOrders.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Ionicons name="filter-outline" size={32} color={Colors.textMuted} />
+          <Text style={styles.emptyText}>No packages in this price range</Text>
+          <Text style={styles.emptySubtext}>
+            None of your tracked packages fall between the selected price limits.
+          </Text>
+          <TouchableOpacity
+            style={[styles.rescanBtn, { marginTop: 14 }]}
+            onPress={handleResetPriceFilter}
+          >
+            <Ionicons name="refresh" size={13} color={Colors.black} />
+            <Text style={styles.rescanBtnText}>Show All Prices</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <View style={styles.list}>
@@ -368,6 +500,78 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
               </TouchableOpacity>
             </View>
           )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Custom Price Range Modal */}
+      <Modal
+        visible={customModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCustomModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.customPriceModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Custom Price Range</Text>
+              <TouchableOpacity onPress={() => setCustomModalVisible(false)}>
+                <Ionicons name="close" size={22} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.priceModalSub}>
+              Filter packages and digital orders between specific price limits.
+            </Text>
+
+            <View style={styles.priceInputsRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>Min Price ({currencySymbol})</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  placeholder="0.00"
+                  placeholderTextColor={Colors.textMuted}
+                  keyboardType="decimal-pad"
+                  value={customMin}
+                  onChangeText={setCustomMin}
+                  autoFocus
+                />
+              </View>
+
+              <View style={styles.priceDivider}>
+                <Text style={{ color: Colors.textMuted, fontSize: 16 }}>—</Text>
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>Max Price ({currencySymbol})</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  placeholder="e.g. 1500"
+                  placeholderTextColor={Colors.textMuted}
+                  keyboardType="decimal-pad"
+                  value={customMax}
+                  onChangeText={setCustomMax}
+                />
+              </View>
+            </View>
+
+            <View style={styles.modalButtonsRow}>
+              <TouchableOpacity
+                style={styles.clearBtn}
+                onPress={handleResetPriceFilter}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.clearBtnText}>Reset</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.applyBtn}
+                onPress={handleApplyCustom}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.applyBtnText}>Apply Filter</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -717,5 +921,128 @@ const styles = StyleSheet.create({
     color: Colors.black,
     fontSize: 14,
     fontWeight: '700',
+  },
+  priceFilterContainer: {
+    marginBottom: 14,
+    gap: 8,
+  },
+  priceFilterHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  priceFilterLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  priceFilterLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    letterSpacing: 0.6,
+  },
+  priceResetBtn: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#38BDF8',
+  },
+  priceChipsRow: {
+    gap: 8,
+  },
+  priceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  priceChipActive: {
+    backgroundColor: Colors.white,
+    borderColor: Colors.white,
+  },
+  priceChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  priceChipTextActive: {
+    color: Colors.black,
+    fontWeight: '700',
+  },
+  customPriceModalContent: {
+    width: '100%',
+    backgroundColor: Colors.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 20,
+    maxWidth: 380,
+    gap: 14,
+  },
+  priceModalSub: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 16,
+  },
+  priceInputsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  inputLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textMuted,
+    marginBottom: 6,
+  },
+  priceInput: {
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  priceDivider: {
+    paddingTop: 18,
+  },
+  modalButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 6,
+  },
+  clearBtn: {
+    flex: 1,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 11,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  clearBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  applyBtn: {
+    flex: 2,
+    backgroundColor: Colors.white,
+    paddingVertical: 11,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  applyBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.black,
   },
 });
