@@ -62,7 +62,7 @@ export interface SavingsVault {
 
 export interface TrackerOrder {
   id: string;
-  platform: 'SHOPEE' | 'LAZADA' | 'TIKTOK' | 'GROCERY' | 'GOOGLE_PLAY' | 'STEAM' | 'ROBLOX' | 'OTHER';
+  platform: 'SHOPEE' | 'LAZADA' | 'TIKTOK' | 'GROCERY' | 'GOOGLE_PLAY' | 'STEAM' | 'ROBLOX' | 'FOODPANDA' | 'OTHER';
   orderId?: string;
   trackingNumber?: string;
   merchant?: string;

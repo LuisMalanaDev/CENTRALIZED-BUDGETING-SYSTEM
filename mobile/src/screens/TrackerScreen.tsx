@@ -289,6 +289,7 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
             else if (o.platform === 'GOOGLE_PLAY') platformIcon = 'logo-google-playstore';
             else if (o.platform === 'STEAM') platformIcon = 'game-controller-outline';
             else if (o.platform === 'ROBLOX') platformIcon = 'cube-outline';
+            else if (o.platform === 'FOODPANDA') platformIcon = 'fast-food-outline';
 
             return (
               <TouchableOpacity
@@ -413,6 +414,8 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
                     ? 'game-controller'
                     : selectedOrder?.platform === 'ROBLOX'
                     ? 'cube'
+                    : selectedOrder?.platform === 'FOODPANDA'
+                    ? 'fast-food'
                     : 'bag-handle'
                 }
                 size={20}

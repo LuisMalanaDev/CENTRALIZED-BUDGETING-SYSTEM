@@ -18,7 +18,31 @@ export async function trackerRoutes(fastify: FastifyInstance) {
           userId,
           OR: [
             { isShopeeOrder: true },
-            { tags: { hasSome: ['Shopee', 'Lazada', 'Grocery', 'Online Orders', 'Parcel', 'Google Play', 'Roblox', 'Steam'] } },
+            { orderTrackingNumber: { not: null } },
+            { source: { contains: 'Email' } },
+            { source: { contains: 'Tracker' } },
+            { notes: { contains: 'Inbound Email' } },
+            {
+              tags: {
+                hasSome: [
+                  'Shopee',
+                  'Lazada',
+                  'TikTok',
+                  'Grocery',
+                  'Online Orders',
+                  'Parcel',
+                  'Google Play',
+                  'Roblox',
+                  'Steam',
+                  'FoodPanda',
+                  'GrabFood',
+                  'Food Delivery',
+                  'Dining',
+                  'Receipt',
+                  'Email Auto-Forward',
+                ],
+              },
+            },
           ],
         };
 
@@ -35,18 +59,19 @@ export async function trackerRoutes(fastify: FastifyInstance) {
         });
 
         return transactions.map((t) => {
-          let platform: 'SHOPEE' | 'LAZADA' | 'TIKTOK' | 'GROCERY' | 'GOOGLE_PLAY' | 'STEAM' | 'ROBLOX' | 'OTHER' = 'OTHER';
-          const lower = (t.description + ' ' + (t.tags || []).join(' ')).toLowerCase();
+          let platform: 'SHOPEE' | 'LAZADA' | 'TIKTOK' | 'GROCERY' | 'GOOGLE_PLAY' | 'STEAM' | 'ROBLOX' | 'FOODPANDA' | 'OTHER' = 'OTHER';
+          const lower = (t.description + ' ' + (t.source || '') + ' ' + (t.tags || []).join(' ')).toLowerCase();
           if (t.isShopeeOrder || lower.includes('shopee')) platform = 'SHOPEE';
           else if (lower.includes('lazada')) platform = 'LAZADA';
           else if (lower.includes('tiktok')) platform = 'TIKTOK';
+          else if (lower.includes('foodpanda') || lower.includes('food delivery') || lower.includes('grab')) platform = 'FOODPANDA';
           else if (lower.includes('grocery') || lower.includes('supermarket')) platform = 'GROCERY';
           else if (lower.includes('google play') || lower.includes('googleplay')) platform = 'GOOGLE_PLAY';
           else if (lower.includes('roblox') || lower.includes('robux')) platform = 'ROBLOX';
           else if (lower.includes('steam')) platform = 'STEAM';
 
           let status: 'PENDING' | 'TO_SHIP' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED' | 'COMPLETED' = 'IN_TRANSIT';
-          if (platform === 'GOOGLE_PLAY' || platform === 'STEAM' || platform === 'ROBLOX') {
+          if (platform === 'GOOGLE_PLAY' || platform === 'STEAM' || platform === 'ROBLOX' || platform === 'FOODPANDA') {
             status = 'DELIVERED';
           }
 
@@ -70,14 +95,47 @@ export async function trackerRoutes(fastify: FastifyInstance) {
         const txs = mockStore.transactions.filter(
           (t) =>
             (t.userId === userId || t.userId === 'demo-user-uuid-1') &&
-            (t.isShopeeOrder || t.tags?.some((tag) => ['Shopee', 'Lazada', 'Google Play', 'Roblox', 'Steam'].includes(tag)))
+            (t.isShopeeOrder ||
+              !!t.orderTrackingNumber ||
+              t.source?.includes('Email') ||
+              t.source?.includes('Tracker') ||
+              t.notes?.includes('Inbound Email') ||
+              t.tags?.some((tag) =>
+                [
+                  'Shopee',
+                  'Lazada',
+                  'TikTok',
+                  'Grocery',
+                  'Online Orders',
+                  'Parcel',
+                  'Google Play',
+                  'Roblox',
+                  'Steam',
+                  'FoodPanda',
+                  'GrabFood',
+                  'Food Delivery',
+                  'Dining',
+                  'Receipt',
+                  'Email Auto-Forward',
+                ].includes(tag)
+              ))
         );
         return txs.map((t) => {
-          const lower = (t.description + ' ' + (t.tags || []).join(' ')).toLowerCase();
-          let platform: any = 'SHOPEE';
-          if (lower.includes('google play') || lower.includes('googleplay')) platform = 'GOOGLE_PLAY';
+          const lower = (t.description + ' ' + (t.source || '') + ' ' + (t.tags || []).join(' ')).toLowerCase();
+          let platform: any = 'OTHER';
+          if (t.isShopeeOrder || lower.includes('shopee')) platform = 'SHOPEE';
           else if (lower.includes('lazada')) platform = 'LAZADA';
+          else if (lower.includes('tiktok')) platform = 'TIKTOK';
+          else if (lower.includes('foodpanda') || lower.includes('food delivery') || lower.includes('grab')) platform = 'FOODPANDA';
+          else if (lower.includes('grocery') || lower.includes('supermarket')) platform = 'GROCERY';
+          else if (lower.includes('google play') || lower.includes('googleplay')) platform = 'GOOGLE_PLAY';
+          else if (lower.includes('roblox') || lower.includes('robux')) platform = 'ROBLOX';
           else if (lower.includes('steam')) platform = 'STEAM';
+
+          let status: any = 'IN_TRANSIT';
+          if (platform === 'GOOGLE_PLAY' || platform === 'STEAM' || platform === 'ROBLOX' || platform === 'FOODPANDA') {
+            status = 'DELIVERED';
+          }
 
           return {
             id: t.id,
@@ -90,7 +148,7 @@ export async function trackerRoutes(fastify: FastifyInstance) {
             paymentMethod: t.paymentMethod || undefined,
             notes: t.notes || undefined,
             source: t.source || undefined,
-            status: (platform === 'GOOGLE_PLAY' || platform === 'STEAM' ? 'DELIVERED' : 'IN_TRANSIT') as any,
+            status,
             orderDate: (t.date instanceof Date ? t.date : new Date(t.date)).toISOString(),
           };
         });

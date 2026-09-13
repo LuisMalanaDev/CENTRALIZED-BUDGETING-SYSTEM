@@ -297,27 +297,6 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           )}
         </View>
 
-        {/* Quick Breakdown of Wallets */}
-        {accounts.length > 0 ? (
-          <View style={styles.walletPillsRow}>
-            {accounts.slice(0, 3).map((acc) => (
-              <TouchableOpacity
-                key={acc.id}
-                style={styles.walletMiniPill}
-                onPress={() => setWalletModalVisible(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.walletMiniName} numberOfLines={1}>
-                  {acc.name}:
-                </Text>
-                <Text style={styles.walletMiniBal}>
-                  {currencySymbol}
-                  {Math.round(Number(acc.balance) || 0).toLocaleString()}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        ) : null}
 
         {/* Action Button */}
         <TouchableOpacity
@@ -787,32 +766,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.textMuted,
     fontStyle: 'italic',
-  },
-  walletPillsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 16,
-  },
-  walletMiniPill: {
-    flexDirection: 'row',
-    backgroundColor: Colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    gap: 4,
-  },
-  walletMiniName: {
-    fontSize: 11,
-    color: Colors.textMuted,
-    fontWeight: '500',
-  },
-  walletMiniBal: {
-    fontSize: 11,
-    color: Colors.white,
-    fontWeight: '700',
   },
   quickAddHeroBtn: {
     flexDirection: 'row',
