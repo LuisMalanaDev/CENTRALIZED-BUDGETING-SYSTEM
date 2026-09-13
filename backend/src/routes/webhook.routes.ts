@@ -107,6 +107,32 @@ export async function webhookRoutes(fastify: FastifyInstance) {
         });
       }
 
+      // 🛡️ Automatic Deduplication: Prevent Shopee "Order Placed" and "Order Delivered" double-counting
+      if (parsed.orderTrackingNumber) {
+        const existingTx = await dbSafe(
+          () =>
+            prisma.transaction.findFirst({
+              where: {
+                userId: targetUserId,
+                orderTrackingNumber: parsed.orderTrackingNumber,
+              },
+            }),
+          () =>
+            mockStore.transactions.find(
+              (t) => t.userId === targetUserId && t.orderTrackingNumber === parsed.orderTrackingNumber
+            )
+        );
+
+        if (existingTx) {
+          return reply.status(200).send({
+            success: true,
+            deduplicated: true,
+            message: `Order ${parsed.orderTrackingNumber} already recorded. Prevented duplicate expense.`,
+            transaction: existingTx,
+          });
+        }
+      }
+
       // 5. Automatically record transaction into ledger
       const transaction = await TransactionService.createTransaction(targetUserId, {
         amount: parsed.amount,
