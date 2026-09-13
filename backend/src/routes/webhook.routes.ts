@@ -99,6 +99,14 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       }
 
 
+      // Ignore non-purchase emails (newsletters, login notifications, promotional ads)
+      if (!parsed.amount || parsed.amount <= 0) {
+        return reply.status(200).send({
+          success: false,
+          message: 'Ignored non-transactional email (no monetary amount)',
+        });
+      }
+
       // 5. Automatically record transaction into ledger
       const transaction = await TransactionService.createTransaction(targetUserId, {
         amount: parsed.amount,
