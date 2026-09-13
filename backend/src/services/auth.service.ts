@@ -19,22 +19,51 @@ export class AuthService {
   static async register(input: RegisterInput) {
     return dbSafe(
       async () => {
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(input.password, salt);
+        const emailLower = input.email.toLowerCase().trim();
+
         const existing = await prisma.user.findUnique({
-          where: { email: input.email.toLowerCase() },
+          where: { email: emailLower },
+          include: { accounts: true },
         });
 
         if (existing) {
-          throw new Error('An account with this email already exists.');
-        }
+          // If user was auto-created from email receipts or previous session, update password & ensure wallets exist
+          const updated = await prisma.user.update({
+            where: { id: existing.id },
+            data: {
+              passwordHash,
+              name: input.name || existing.name || emailLower.split('@')[0],
+              currency: input.currency || existing.currency || 'PHP',
+            },
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              currency: true,
+              createdAt: true,
+            },
+          });
 
-        const salt = await bcrypt.genSalt(10);
-        const passwordHash = await bcrypt.hash(input.password, salt);
+          if (!existing.accounts || existing.accounts.length === 0) {
+            await prisma.account.createMany({
+              data: [
+                { userId: existing.id, name: 'GCash Wallet', type: 'WALLET', balance: 0, currency: input.currency || 'PHP', color: '#007DFE', icon: 'Smartphone' },
+                { userId: existing.id, name: 'Bank Savings', type: 'SAVINGS', balance: 0, currency: input.currency || 'PHP', color: '#B11116', icon: 'Landmark' },
+                { userId: existing.id, name: 'Cash on Hand', type: 'CASH', balance: 0, currency: input.currency || 'PHP', color: '#10B981', icon: 'Banknote' },
+              ],
+            });
+          }
+
+          return updated;
+        }
 
         const user = await prisma.user.create({
           data: {
-            email: input.email.toLowerCase(),
+            email: emailLower,
             passwordHash,
-            name: input.name || input.email.split('@')[0],
+            name: input.name || emailLower.split('@')[0],
             currency: input.currency || 'PHP',
             accounts: {
               create: [
