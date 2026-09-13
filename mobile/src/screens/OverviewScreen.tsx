@@ -159,7 +159,14 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
     }
   };
 
-  // Total Money Left across all active wallets & accounts (strictly parse as number)
+  // Inflow vs Outflow comparison for the selected Date Filter
+  const inflow = metrics.totalInflow || 0;
+  const outflow = metrics.totalOutflow || 0;
+  const moneyLeftFromInflow = inflow - outflow;
+  const percentUsed = inflow > 0 ? Math.min(100, Math.round((outflow / inflow) * 100)) : 0;
+  const percentRemaining = Math.max(0, 100 - percentUsed);
+
+  // Total Money across active wallets & accounts
   const totalMoneyLeft = accounts.reduce((acc, a) => acc + (Number(a.balance) || 0), 0);
 
   return (
@@ -196,10 +203,16 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
         </View>
       </View>
 
-      {/* Main Total Money Left Hero Card */}
+      {/* Main Inflow vs Expenses Hero Card (Money Left) */}
       <View style={styles.heroCard}>
         <View style={styles.heroHeader}>
-          <Text style={styles.heroLabel}>TOTAL MONEY LEFT</Text>
+          <View>
+            <Text style={styles.heroLabel}>MONEY LEFT (REMAINING INFLOW)</Text>
+            <Text style={styles.heroFilterNote}>
+              {filter.label || 'Active Filter Period'}
+            </Text>
+          </View>
+
           <TouchableOpacity
             style={styles.walletBadge}
             onPress={() => setWalletModalVisible(true)}
@@ -211,13 +224,76 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.heroAmount}>
+        {/* Big Remaining Inflow Amount */}
+        <Text
+          style={[
+            styles.heroAmount,
+            moneyLeftFromInflow < 0 && { color: '#F87171' },
+          ]}
+        >
           {currencySymbol}
-          {Number(totalMoneyLeft || 0).toLocaleString('en-US', {
+          {Number(moneyLeftFromInflow).toLocaleString('en-US', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
           })}
         </Text>
+
+        {/* Inflow vs Outflow Comparison Box */}
+        <View style={styles.inflowComparisonBox}>
+          <View style={styles.inflowCompareRow}>
+            <View style={styles.inflowCompareCol}>
+              <View style={styles.inflowIndicatorDot} />
+              <View>
+                <Text style={styles.inflowCompareLabel}>Total Inflow (Income)</Text>
+                <Text style={styles.inflowCompareVal}>
+                  +{currencySymbol}{inflow.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.inflowDivider} />
+
+            <View style={styles.inflowCompareCol}>
+              <View style={styles.outflowIndicatorDot} />
+              <View>
+                <Text style={styles.inflowCompareLabel}>Total Spent (Receipts/Orders)</Text>
+                <Text style={styles.outflowCompareVal}>
+                  −{currencySymbol}{outflow.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Progress Bar Comparing Inflow to Expenses */}
+          {inflow > 0 ? (
+            <View style={styles.inflowProgressSection}>
+              <View style={styles.inflowProgressTrack}>
+                <View
+                  style={[
+                    styles.inflowProgressBar,
+                    {
+                      width: `${percentUsed}%`,
+                      backgroundColor:
+                        percentUsed >= 100 ? '#EF4444' : percentUsed >= 80 ? '#F59E0B' : Colors.white,
+                    },
+                  ]}
+                />
+              </View>
+              <View style={styles.inflowProgressLabels}>
+                <Text style={styles.inflowProgressSub}>
+                  {percentUsed}% spent ({currencySymbol}{outflow.toLocaleString()})
+                </Text>
+                <Text style={styles.inflowProgressSub}>
+                  {percentRemaining}% left ({currencySymbol}{Math.max(0, moneyLeftFromInflow).toLocaleString()})
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <Text style={styles.inflowZeroPrompt}>
+              No income/salary logged yet for this period. Tap below to log inflow!
+            </Text>
+          )}
+        </View>
 
         {/* Quick Breakdown of Wallets */}
         {accounts.length > 0 ? (
@@ -593,10 +669,16 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   heroLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     color: Colors.textSecondary,
     letterSpacing: 0.8,
+  },
+  heroFilterNote: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontWeight: '500',
+    marginTop: 2,
   },
   walletBadge: {
     flexDirection: 'row',
@@ -619,7 +701,90 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: Colors.white,
     letterSpacing: -1,
+    marginBottom: 12,
+  },
+  inflowComparisonBox: {
+    backgroundColor: Colors.surfaceSubtle,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 12,
     marginBottom: 14,
+    gap: 10,
+  },
+  inflowCompareRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  inflowCompareCol: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  inflowIndicatorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4ADE80',
+  },
+  outflowIndicatorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#F87171',
+  },
+  inflowCompareLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+  },
+  inflowCompareVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#4ADE80',
+    marginTop: 2,
+  },
+  outflowCompareVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#F87171',
+    marginTop: 2,
+  },
+  inflowDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: Colors.border,
+    marginHorizontal: 8,
+  },
+  inflowProgressSection: {
+    gap: 6,
+  },
+  inflowProgressTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.surface,
+    overflow: 'hidden',
+  },
+  inflowProgressBar: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  inflowProgressLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  inflowProgressSub: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: Colors.textSecondary,
+  },
+  inflowZeroPrompt: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontStyle: 'italic',
   },
   walletPillsRow: {
     flexDirection: 'row',

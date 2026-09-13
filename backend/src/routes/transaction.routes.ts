@@ -4,6 +4,7 @@ import { TransactionService } from '../services/transaction.service.js';
 import { ParserService } from '../services/parser.service.js';
 import { authenticate } from '../plugins/auth.js';
 import { TransactionType, PaymentMethod } from '@prisma/client';
+import { prisma } from '../prisma.js';
 
 const createTransactionSchema = z.object({
   amount: z.number().positive(),
@@ -19,6 +20,7 @@ const createTransactionSchema = z.object({
   date: z.string().optional(),
   accountId: z.string().optional(),
   categoryId: z.string().optional(),
+  category: z.string().optional(),
 });
 
 export async function transactionRoutes(fastify: FastifyInstance) {
@@ -50,8 +52,40 @@ export async function transactionRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: 'Validation failed', details: parsed.error.format() });
     }
 
+    let categoryId = parsed.data.categoryId;
+    if (!categoryId && parsed.data.category) {
+      const catName = parsed.data.category.trim();
+      const slug = catName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      try {
+        const found = await prisma.category.findFirst({
+          where: {
+            OR: [
+              { name: { equals: catName, mode: 'insensitive' } },
+              { slug: { equals: slug, mode: 'insensitive' } },
+            ],
+          },
+        });
+        if (found) {
+          categoryId = found.id;
+        } else {
+          const newCat = await prisma.category.create({
+            data: {
+              name: catName,
+              slug,
+              userId: request.user.userId,
+              type: (parsed.data.type as any) || 'EXPENSE',
+            },
+          });
+          categoryId = newCat.id;
+        }
+      } catch (err) {
+        // Fallback without categoryId if lookup fails
+      }
+    }
+
     const transaction = await TransactionService.createTransaction(request.user.userId, {
       ...parsed.data,
+      categoryId,
       type: parsed.data.type as TransactionType,
       paymentMethod: parsed.data.paymentMethod as PaymentMethod,
     });

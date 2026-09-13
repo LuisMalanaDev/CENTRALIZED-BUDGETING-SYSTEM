@@ -77,6 +77,7 @@ async function main() {
   await server.register(transactionRoutes, { prefix: '/api/transactions' });
   await server.register(budgetRoutes, { prefix: '/api/budgets' });
   await server.register(vaultRoutes, { prefix: '/api/savings-goals' });
+  await server.register(vaultRoutes, { prefix: '/api/vaults' });
   await server.register(analyticsRoutes, { prefix: '/api/analytics' });
   await server.register(webhookRoutes, { prefix: '/api/webhooks' });
   await server.register(adminRoutes, { prefix: '/api/admin' });

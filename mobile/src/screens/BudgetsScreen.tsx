@@ -7,6 +7,9 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
+  Modal,
+  TextInput,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -14,6 +17,17 @@ import { Colors } from '../constants/theme';
 import { api } from '../api/client';
 import { CategoryBudget, SavingsVault } from '../types';
 import { getCategoryName } from '../utils/format';
+
+const BUDGET_CATEGORIES = [
+  { name: 'Food & Dining', icon: 'restaurant-outline' },
+  { name: 'Shopee / Online', icon: 'cart-outline' },
+  { name: 'Groceries', icon: 'basket-outline' },
+  { name: 'Transportation', icon: 'car-outline' },
+  { name: 'Bills & Utilities', icon: 'receipt-outline' },
+  { name: 'Entertainment', icon: 'game-controller-outline' },
+  { name: 'Personal Care', icon: 'heart-outline' },
+  { name: 'Other Expense', icon: 'ellipsis-horizontal-outline' },
+];
 
 export const BudgetsScreen: React.FC = () => {
   const { user } = useAuth();
@@ -25,6 +39,26 @@ export const BudgetsScreen: React.FC = () => {
   const [budgetPage, setBudgetPage] = useState(1);
   const [vaultPage, setVaultPage] = useState(1);
   const PAGE_SIZE = 6;
+
+  // Budget Modal State
+  const [budgetModalVisible, setBudgetModalVisible] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState(BUDGET_CATEGORIES[0].name);
+  const [budgetAmountInput, setBudgetAmountInput] = useState('');
+  const [savingBudget, setSavingBudget] = useState(false);
+
+  // Vault Modal State
+  const [vaultModalVisible, setVaultModalVisible] = useState(false);
+  const [vaultNameInput, setVaultNameInput] = useState('');
+  const [vaultTargetInput, setVaultTargetInput] = useState('');
+  const [vaultInitialInput, setVaultInitialInput] = useState('');
+  const [savingVault, setSavingVault] = useState(false);
+
+  // Vault Deposit/Withdraw Modal State
+  const [actionModalVisible, setActionModalVisible] = useState(false);
+  const [selectedVault, setSelectedVault] = useState<SavingsVault | null>(null);
+  const [actionType, setActionType] = useState<'DEPOSIT' | 'WITHDRAW'>('DEPOSIT');
+  const [actionAmountInput, setActionAmountInput] = useState('');
+  const [savingAction, setSavingAction] = useState(false);
 
   const currencySymbol = user?.currency === 'USD' ? '$' : '₱';
 
@@ -51,6 +85,104 @@ export const BudgetsScreen: React.FC = () => {
   const onRefresh = () => {
     setRefreshing(true);
     fetchData();
+  };
+
+  const handleSaveBudget = async () => {
+    const amt = parseFloat(budgetAmountInput.replace(/,/g, ''));
+    if (isNaN(amt) || amt <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid monthly budget limit.');
+      return;
+    }
+
+    setSavingBudget(true);
+    try {
+      await api.post('/api/budgets', {
+        name: selectedCategory,
+        amount: amt,
+        period: 'MONTHLY',
+      });
+      setBudgetModalVisible(false);
+      setBudgetAmountInput('');
+      fetchData();
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to save budget cap');
+    } finally {
+      setSavingBudget(false);
+    }
+  };
+
+  const handleDeleteBudget = (id: string, name: string) => {
+    Alert.alert('Delete Budget Cap', `Remove budget spending cap for "${name}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.delete(`/api/budgets/${id}`);
+            fetchData();
+          } catch (err: any) {
+            Alert.alert('Error', err.message || 'Failed to delete budget');
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleSaveVault = async () => {
+    const target = parseFloat(vaultTargetInput.replace(/,/g, ''));
+    const initial = parseFloat(vaultInitialInput.replace(/,/g, '')) || 0;
+    if (!vaultNameInput.trim()) {
+      Alert.alert('Invalid Name', 'Please enter a name for your savings vault.');
+      return;
+    }
+    if (isNaN(target) || target <= 0) {
+      Alert.alert('Invalid Target', 'Please enter a target savings goal.');
+      return;
+    }
+
+    setSavingVault(true);
+    try {
+      await api.post('/api/vaults', {
+        name: vaultNameInput.trim(),
+        targetAmount: target,
+        currentAmount: initial,
+      });
+      setVaultModalVisible(false);
+      setVaultNameInput('');
+      setVaultTargetInput('');
+      setVaultInitialInput('');
+      fetchData();
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to create savings vault');
+    } finally {
+      setSavingVault(false);
+    }
+  };
+
+  const handleVaultDepositWithdraw = async () => {
+    if (!selectedVault) return;
+    const amt = parseFloat(actionAmountInput.replace(/,/g, ''));
+    if (isNaN(amt) || amt <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid positive amount.');
+      return;
+    }
+
+    setSavingAction(true);
+    try {
+      await api.post(`/api/vaults/${selectedVault.id}/deposit`, {
+        amount: amt,
+        action: actionType,
+      });
+      setActionModalVisible(false);
+      setActionAmountInput('');
+      setSelectedVault(null);
+      fetchData();
+    } catch (err: any) {
+      Alert.alert('Error', err.message || `Failed to ${actionType.toLowerCase()} funds`);
+    } finally {
+      setSavingAction(false);
+    }
   };
 
   const totalBudget = budgets.reduce((acc, b) => acc + (b.limit ?? b.amount ?? 0), 0);
@@ -109,6 +241,19 @@ export const BudgetsScreen: React.FC = () => {
       ) : activeTab === 'BUDGETS' ? (
         /* Budgets Tab */
         <View style={styles.tabSection}>
+          {/* Header Action */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeading}>Category Budget Caps</Text>
+            <TouchableOpacity
+              style={styles.addPrimaryBtn}
+              onPress={() => setBudgetModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={15} color={Colors.black} />
+              <Text style={styles.addPrimaryBtnText}>Set Budget Cap</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Summary Card */}
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>TOTAL MONTHLY BUDGET</Text>
@@ -137,6 +282,14 @@ export const BudgetsScreen: React.FC = () => {
               <Text style={styles.emptySubtext}>
                 Set spending limits for Food, Shopee, and Groceries to prevent overspending.
               </Text>
+              <TouchableOpacity
+                style={[styles.addPrimaryBtn, { marginTop: 14 }]}
+                onPress={() => setBudgetModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add" size={16} color={Colors.black} />
+                <Text style={styles.addPrimaryBtnText}>Set First Budget Cap</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.cardsList}>
@@ -148,12 +301,36 @@ export const BudgetsScreen: React.FC = () => {
                   <View key={b.id} style={styles.budgetCard}>
                     <View style={styles.budgetTop}>
                       <Text style={styles.budgetCat}>{catName}</Text>
-                      <Text style={styles.budgetPercent}>{percent}%</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <Text
+                          style={[
+                            styles.budgetPercent,
+                            percent >= 100 ? { color: '#F87171' } : percent >= 80 ? { color: '#FBBF24' } : null,
+                          ]}
+                        >
+                          {percent}%
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => handleDeleteBudget(b.id, catName)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons name="trash-outline" size={15} color={Colors.textMuted} />
+                        </TouchableOpacity>
+                      </View>
                     </View>
 
                     {/* Progress Track */}
                     <View style={styles.progressTrack}>
-                      <View style={[styles.progressBar, { width: `${percent}%` }]} />
+                      <View
+                        style={[
+                          styles.progressBar,
+                          {
+                            width: `${percent}%`,
+                            backgroundColor:
+                              percent >= 100 ? '#EF4444' : percent >= 80 ? '#F59E0B' : Colors.white,
+                          },
+                        ]}
+                      />
                     </View>
 
                     <View style={styles.budgetBottom}>
@@ -214,6 +391,19 @@ export const BudgetsScreen: React.FC = () => {
       ) : (
         /* Vaults Tab */
         <View style={styles.tabSection}>
+          {/* Header Action */}
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeading}>Savings Lockboxes</Text>
+            <TouchableOpacity
+              style={styles.addPrimaryBtn}
+              onPress={() => setVaultModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={15} color={Colors.black} />
+              <Text style={styles.addPrimaryBtnText}>Create Vault</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>TOTAL SAVINGS LOCKED</Text>
             <Text style={styles.summaryValue}>
@@ -232,6 +422,14 @@ export const BudgetsScreen: React.FC = () => {
               <Text style={styles.emptySubtext}>
                 Create emergency fund or milestone savings goals to track your growth.
               </Text>
+              <TouchableOpacity
+                style={[styles.addPrimaryBtn, { marginTop: 14 }]}
+                onPress={() => setVaultModalVisible(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add" size={16} color={Colors.black} />
+                <Text style={styles.addPrimaryBtnText}>Create First Vault</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.cardsList}>
@@ -251,18 +449,47 @@ export const BudgetsScreen: React.FC = () => {
                     </View>
 
                     <View style={styles.progressTrack}>
-                      <View style={[styles.progressBar, { width: `${percent}%` }]} />
+                      <View style={[styles.progressBar, { width: `${percent}%`, backgroundColor: '#10B981' }]} />
                     </View>
 
                     <View style={styles.budgetBottom}>
                       <Text style={styles.budgetSpent}>
                         Saved: {currencySymbol}
-                        {v.currentAmount.toLocaleString()}
+                        {Number(v.currentAmount || 0).toLocaleString()}
                       </Text>
                       <Text style={styles.budgetLimit}>
                         Goal: {currencySymbol}
-                        {v.targetAmount.toLocaleString()}
+                        {Number(v.targetAmount || 0).toLocaleString()}
                       </Text>
+                    </View>
+
+                    {/* Deposit & Withdraw Action Buttons */}
+                    <View style={styles.vaultActionsRow}>
+                      <TouchableOpacity
+                        style={styles.vaultActionBtnDeposit}
+                        onPress={() => {
+                          setSelectedVault(v);
+                          setActionType('DEPOSIT');
+                          setActionModalVisible(true);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="add-circle" size={13} color="#4ADE80" />
+                        <Text style={styles.vaultActionTextDeposit}>Deposit</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.vaultActionBtnWithdraw}
+                        onPress={() => {
+                          setSelectedVault(v);
+                          setActionType('WITHDRAW');
+                          setActionModalVisible(true);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="remove-circle" size={13} color="#F87171" />
+                        <Text style={styles.vaultActionTextWithdraw}>Withdraw</Text>
+                      </TouchableOpacity>
                     </View>
                   </View>
                 );
@@ -310,6 +537,191 @@ export const BudgetsScreen: React.FC = () => {
           )}
         </View>
       )}
+
+      {/* Set Category Budget Cap Modal */}
+      <Modal
+        visible={budgetModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setBudgetModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Set Category Budget Cap</Text>
+              <TouchableOpacity onPress={() => setBudgetModalVisible(false)}>
+                <Ionicons name="close" size={22} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalLabel}>Select Expense Category</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.catChipsRow}>
+              {BUDGET_CATEGORIES.map((cat) => {
+                const isSelected = selectedCategory === cat.name;
+                return (
+                  <TouchableOpacity
+                    key={cat.name}
+                    style={[styles.catChip, isSelected && styles.catChipActive]}
+                    onPress={() => setSelectedCategory(cat.name)}
+                  >
+                    <Ionicons
+                      name={cat.icon as any}
+                      size={13}
+                      color={isSelected ? Colors.black : Colors.textSecondary}
+                    />
+                    <Text style={[styles.catChipText, isSelected && styles.catChipTextActive]}>
+                      {cat.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            <Text style={styles.modalLabel}>Monthly Spending Limit ({currencySymbol})</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. 5000"
+              placeholderTextColor={Colors.textMuted}
+              keyboardType="decimal-pad"
+              value={budgetAmountInput}
+              onChangeText={setBudgetAmountInput}
+              autoFocus
+            />
+
+            <TouchableOpacity
+              style={[styles.modalSubmitBtn, savingBudget && { opacity: 0.6 }]}
+              onPress={handleSaveBudget}
+              disabled={savingBudget}
+            >
+              {savingBudget ? (
+                <ActivityIndicator color={Colors.black} size="small" />
+              ) : (
+                <Text style={styles.modalSubmitBtnText}>Save Budget Cap</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Create Savings Vault Modal */}
+      <Modal
+        visible={vaultModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setVaultModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Create Savings Vault</Text>
+              <TouchableOpacity onPress={() => setVaultModalVisible(false)}>
+                <Ionicons name="close" size={22} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalLabel}>Goal / Vault Name</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. Emergency Fund, New PC"
+              placeholderTextColor={Colors.textMuted}
+              value={vaultNameInput}
+              onChangeText={setVaultNameInput}
+              autoFocus
+            />
+
+            <Text style={styles.modalLabel}>Target Savings Goal ({currencySymbol})</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. 20000"
+              placeholderTextColor={Colors.textMuted}
+              keyboardType="decimal-pad"
+              value={vaultTargetInput}
+              onChangeText={setVaultTargetInput}
+            />
+
+            <Text style={styles.modalLabel}>Initial Locked Deposit (Optional)</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="0.00"
+              placeholderTextColor={Colors.textMuted}
+              keyboardType="decimal-pad"
+              value={vaultInitialInput}
+              onChangeText={setVaultInitialInput}
+            />
+
+            <TouchableOpacity
+              style={[styles.modalSubmitBtn, savingVault && { opacity: 0.6 }]}
+              onPress={handleSaveVault}
+              disabled={savingVault}
+            >
+              {savingVault ? (
+                <ActivityIndicator color={Colors.black} size="small" />
+              ) : (
+                <Text style={styles.modalSubmitBtnText}>Create Lockbox Vault</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Vault Deposit/Withdraw Modal */}
+      <Modal
+        visible={actionModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setActionModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {actionType === 'DEPOSIT' ? 'Deposit into Vault' : 'Withdraw from Vault'}
+              </Text>
+              <TouchableOpacity onPress={() => setActionModalVisible(false)}>
+                <Ionicons name="close" size={22} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.vaultActionGoalName}>
+              Vault: {selectedVault?.name}
+            </Text>
+            <Text style={styles.vaultActionGoalSub}>
+              Current: {currencySymbol}{Number(selectedVault?.currentAmount || 0).toLocaleString()} • Goal: {currencySymbol}{Number(selectedVault?.targetAmount || 0).toLocaleString()}
+            </Text>
+
+            <Text style={styles.modalLabel}>
+              Amount to {actionType === 'DEPOSIT' ? 'Deposit' : 'Withdraw'} ({currencySymbol})
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="0.00"
+              placeholderTextColor={Colors.textMuted}
+              keyboardType="decimal-pad"
+              value={actionAmountInput}
+              onChangeText={setActionAmountInput}
+              autoFocus
+            />
+
+            <TouchableOpacity
+              style={[
+                styles.modalSubmitBtn,
+                actionType === 'WITHDRAW' && { backgroundColor: '#F87171' },
+                savingAction && { opacity: 0.6 },
+              ]}
+              onPress={handleVaultDepositWithdraw}
+              disabled={savingAction}
+            >
+              {savingAction ? (
+                <ActivityIndicator color={Colors.black} size="small" />
+              ) : (
+                <Text style={styles.modalSubmitBtnText}>
+                  Confirm {actionType === 'DEPOSIT' ? 'Deposit (+)' : 'Withdraw (−)'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -500,5 +912,165 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 11,
     fontWeight: '600',
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  sectionHeading: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.white,
+    letterSpacing: -0.3,
+  },
+  addPrimaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: Colors.white,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  addPrimaryBtnText: {
+    color: Colors.black,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  vaultActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  vaultActionBtnDeposit: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(74, 222, 128, 0.12)',
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(74, 222, 128, 0.3)',
+  },
+  vaultActionTextDeposit: {
+    color: '#4ADE80',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  vaultActionBtnWithdraw: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(248, 113, 113, 0.12)',
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.3)',
+  },
+  vaultActionTextWithdraw: {
+    color: '#F87171',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 40,
+    gap: 12,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  modalLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
+  modalInput: {
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: Colors.white,
+    fontSize: 15,
+  },
+  modalSubmitBtn: {
+    backgroundColor: Colors.white,
+    borderRadius: 10,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  modalSubmitBtnText: {
+    color: Colors.black,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  catChipsRow: {
+    gap: 8,
+    paddingVertical: 4,
+  },
+  catChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: Colors.surfaceSubtle,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  catChipActive: {
+    backgroundColor: Colors.white,
+    borderColor: Colors.white,
+  },
+  catChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  catChipTextActive: {
+    color: Colors.black,
+  },
+  vaultActionGoalName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  vaultActionGoalSub: {
+    fontSize: 12,
+    color: Colors.textMuted,
   },
 });

@@ -22,10 +22,10 @@ const depositWithdrawSchema = z.object({
 export async function vaultRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticate);
 
-  // List goals
+  // List goals / vaults
   fastify.get('/', async (request, reply) => {
     const goals = await VaultService.listGoals(request.user.userId);
-    return reply.send({ goals });
+    return reply.send({ goals, vaults: goals });
   });
 
   // Create goal

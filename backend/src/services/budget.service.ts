@@ -34,6 +34,8 @@ export class BudgetService {
           select: {
             amount: true,
             categoryId: true,
+            category: { select: { id: true, name: true, slug: true } },
+            description: true,
           },
         });
 
@@ -41,10 +43,20 @@ export class BudgetService {
 
         const budgetsWithMetrics = budgets.map((b) => {
           let spent = 0;
-          if (!b.categoryId) {
+          const bName = (b.name || '').toLowerCase();
+          const isOverall = !b.categoryId && (bName === 'all' || bName === 'overall' || bName === 'total budget');
+
+          if (isOverall) {
             spent = totalMonthlyExpense;
           } else {
-            const matched = expenses.filter((e) => e.categoryId === b.categoryId);
+            const matched = expenses.filter((e) => {
+              if (b.categoryId && e.categoryId === b.categoryId) return true;
+              const catName = (e.category?.name || '').toLowerCase();
+              const catSlug = (e.category?.slug || '').toLowerCase();
+              if (catName && (bName.includes(catName) || catName.includes(bName))) return true;
+              if (catSlug && (bName.includes(catSlug) || catSlug.includes(bName))) return true;
+              return false;
+            });
             spent = matched.reduce((sum, e) => sum + Number(e.amount), 0);
           }
 
