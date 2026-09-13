@@ -6,6 +6,11 @@ import { mockStore } from '../services/mockStore.js';
 import { prisma } from '../prisma.js';
 import { dbSafe } from '../services/dbHelper.js';
 
+// In-memory caches to eliminate multi-hop Supabase round-trips during email sync
+let cachedCategories: any[] | null = null;
+let cachedCategoriesExpire = 0;
+const userAccountCache = new Map<string, { account: any; expire: number }>();
+
 export async function webhookRoutes(fastify: FastifyInstance) {
   // Public incoming webhook endpoint (called by Inbound Email providers or forwarding workers)
   fastify.post('/email-receipt', async (request, reply) => {
@@ -67,38 +72,6 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       // 2. Parse email content
       const parsed = EmailParserService.parseEmail(body);
 
-      // 3. Look up categories to assign
-      const categories = await dbSafe(
-        () => prisma.category.findMany({ where: { isSystem: true } }),
-        () => mockStore.categories
-      );
-
-      const category = categories.find((c) => c.slug === parsed.suggestedCategorySlug) || categories[0];
-
-      // 4. Look up default account (e.g. GCash)
-      let accounts = await dbSafe(
-        () => prisma.account.findMany({ where: { userId: targetUserId } }),
-        () => mockStore.accounts.filter((a) => a.userId === targetUserId || a.userId === 'demo-user-uuid-1')
-      );
-
-      let defaultAccount: any = accounts.find((a) => a.name.includes('GCash')) || accounts[0];
-      if (!defaultAccount) {
-        defaultAccount = await dbSafe(
-          () =>
-            prisma.account.create({
-              data: {
-                userId: targetUserId,
-                name: 'GCash Wallet',
-                type: 'WALLET',
-                balance: 0,
-                color: '#007DFE',
-              },
-            }),
-          () => null
-        );
-      }
-
-
       // Ignore non-purchase emails (newsletters, login notifications, promotional ads)
       if (!parsed.amount || parsed.amount <= 0) {
         return reply.status(200).send({
@@ -144,6 +117,49 @@ export async function webhookRoutes(fastify: FastifyInstance) {
             message: `Email receipt already recorded (${body.subject || parsed.orderTrackingNumber}). Prevented duplicate expense.`,
             transaction: existingTx,
           });
+        }
+      }
+
+      // 3. Look up categories to assign (cached for 5 minutes)
+      const now = Date.now();
+      if (!cachedCategories || now > cachedCategoriesExpire) {
+        cachedCategories = await dbSafe(
+          () => prisma.category.findMany({ where: { isSystem: true } }),
+          () => mockStore.categories
+        );
+        cachedCategoriesExpire = now + 5 * 60 * 1000;
+      }
+
+      const category = cachedCategories.find((c) => c.slug === parsed.suggestedCategorySlug) || cachedCategories[0];
+
+      // 4. Look up default account (cached for 2 minutes per user)
+      const cachedAcc = userAccountCache.get(targetUserId);
+      let defaultAccount = cachedAcc && now < cachedAcc.expire ? cachedAcc.account : null;
+
+      if (!defaultAccount) {
+        let accounts = await dbSafe(
+          () => prisma.account.findMany({ where: { userId: targetUserId } }),
+          () => mockStore.accounts.filter((a) => a.userId === targetUserId || a.userId === 'demo-user-uuid-1')
+        );
+
+        defaultAccount = accounts.find((a) => a.name.includes('GCash')) || accounts[0];
+        if (!defaultAccount) {
+          defaultAccount = await dbSafe(
+            () =>
+              prisma.account.create({
+                data: {
+                  userId: targetUserId,
+                  name: 'GCash Wallet',
+                  type: 'WALLET',
+                  balance: 0,
+                  color: '#007DFE',
+                },
+              }),
+            () => null
+          );
+        }
+        if (defaultAccount) {
+          userAccountCache.set(targetUserId, { account: defaultAccount, expire: now + 2 * 60 * 1000 });
         }
       }
 
