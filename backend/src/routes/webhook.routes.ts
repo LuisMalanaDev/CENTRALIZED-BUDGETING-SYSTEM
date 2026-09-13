@@ -158,6 +158,7 @@ export async function webhookRoutes(fastify: FastifyInstance) {
         tags: parsed.tags,
         isShopeeOrder: parsed.isShopeeOrder,
         orderTrackingNumber: parsed.orderTrackingNumber,
+        date: parsed.date,
         accountId: defaultAccount?.id,
         categoryId: category?.id,
       });

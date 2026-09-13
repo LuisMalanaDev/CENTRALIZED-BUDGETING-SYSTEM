@@ -7,6 +7,7 @@ export interface InboundEmailPayload {
   text?: string;
   html?: string;
   token?: string;
+  date?: string;
 }
 
 export class EmailParserService {
@@ -17,16 +18,17 @@ export class EmailParserService {
     const subject = payload.subject || '';
     const body = payload.text || this.stripHtml(payload.html || '');
     const from = payload.from || '';
+    const emailDate = payload.date;
     const combined = `${subject}\n${from}\n${body}`.toLowerCase();
 
     // 1. Shopee
     if (combined.includes('shopee')) {
-      return this.parseShopeeEmail(subject, body, `${subject}\n${body}`);
+      return this.parseShopeeEmail(subject, body, `${subject}\n${body}`, emailDate);
     }
 
     // 2. Lazada
     if (combined.includes('lazada')) {
-      return this.parseLazadaEmail(subject, body, `${subject}\n${body}`);
+      return this.parseLazadaEmail(subject, body, `${subject}\n${body}`, emailDate);
     }
 
     // 3. Google Play (Prioritized before Roblox/in-app merchants so Google Play receipts are recognized)
@@ -36,7 +38,7 @@ export class EmailParserService {
       from.includes('google.com') ||
       subject.toLowerCase().includes('google play')
     ) {
-      return this.parseGooglePlayEmail(subject, body, `${subject}\n${body}`);
+      return this.parseGooglePlayEmail(subject, body, `${subject}\n${body}`, emailDate);
     }
 
     // 4. Steam (Ignored per user preference)
@@ -44,7 +46,7 @@ export class EmailParserService {
       return {
         description: 'Ignored Steam Notification',
         amount: 0,
-        date: new Date().toISOString(),
+        date: emailDate || new Date().toISOString(),
         paymentMethod: 'OTHER',
         source: 'Steam',
         tags: [],
@@ -56,30 +58,30 @@ export class EmailParserService {
 
     // 5. Roblox (Direct roblox.com emails)
     if (combined.includes('roblox')) {
-      return this.parseRobloxEmail(subject, body, `${subject}\n${body}`);
+      return this.parseRobloxEmail(subject, body, `${subject}\n${body}`, emailDate);
     }
 
     // 6. Netflix
     if (combined.includes('netflix')) {
-      return this.parseNetflixEmail(subject, body, `${subject}\n${body}`);
+      return this.parseNetflixEmail(subject, body, `${subject}\n${body}`, emailDate);
     }
 
     // 7. GCash
     if (combined.includes('gcash')) {
-      return this.parseGcashEmail(subject, body, `${subject}\n${body}`);
+      return this.parseGcashEmail(subject, body, `${subject}\n${body}`, emailDate);
     }
 
     // 8. Grab / FoodPanda
     if (combined.includes('grab') || combined.includes('foodpanda')) {
-      return this.parseFoodDeliveryEmail(subject, body, `${subject}\n${body}`);
+      return this.parseFoodDeliveryEmail(subject, body, `${subject}\n${body}`, emailDate);
     }
 
     // 9. Fallback generic e-commerce / receipt parser
-    return this.parseGenericReceiptEmail(subject, body, `${subject}\n${body}`);
+    return this.parseGenericReceiptEmail(subject, body, `${subject}\n${body}`, emailDate);
   }
 
   // --- SHOPEE ---
-  private static parseShopeeEmail(subject: string, body: string, combined: string): ParsedTransactionDraft {
+  private static parseShopeeEmail(subject: string, body: string, combined: string, emailDate?: string): ParsedTransactionDraft {
     const orderIdMatch =
       combined.match(/(?:(?:COD\s*)?Order\s*(?:ID|Number|No\.?|Ref\.?)?)\s*[:#]\s*([A-Za-z0-9_-]{8,30})/i) ||
       combined.match(/#([0-9]{8,15}[A-Z0-9]{4,15})/i) ||
@@ -111,10 +113,19 @@ export class EmailParserService {
     else if (lower.includes('cash on delivery') || lower.includes('cod')) paymentMethod = 'CASH';
     else if (lower.includes('maya')) paymentMethod = 'MAYA';
 
+    let date = emailDate || new Date().toISOString();
+    const dateMatch = combined.match(/(\d{4}-\d{2}-\d{2})/);
+    if (dateMatch) {
+      const parsedDate = new Date(dateMatch[1]);
+      if (!isNaN(parsedDate.getTime())) {
+        date = parsedDate.toISOString();
+      }
+    }
+
     return {
       description,
       amount: amount > 0 ? amount : 999.0,
-      date: new Date().toISOString(),
+      date,
       paymentMethod,
       source: 'Shopee (Email Sync)',
       tags: ['Shopee', 'Online Orders', 'Parcel'],
@@ -126,7 +137,7 @@ export class EmailParserService {
   }
 
   // --- LAZADA ---
-  private static parseLazadaEmail(subject: string, body: string, combined: string): ParsedTransactionDraft {
+  private static parseLazadaEmail(subject: string, body: string, combined: string, emailDate?: string): ParsedTransactionDraft {
     const orderIdMatch = combined.match(/(?:Order\s*(?:Number|No\.?|#)?)\s*[:#]?\s*([0-9]{10,20})/i);
     const trackingNumber = orderIdMatch ? `#${orderIdMatch[1]}` : undefined;
 
@@ -138,7 +149,7 @@ export class EmailParserService {
     return {
       description: trackingNumber ? `Lazada Order ${trackingNumber}` : 'Lazada Online Order',
       amount: amount > 0 ? amount : 500.0,
-      date: new Date().toISOString(),
+      date: emailDate || new Date().toISOString(),
       paymentMethod: combined.toLowerCase().includes('cod') ? 'CASH' : 'GCASH',
       source: 'Lazada (Email Sync)',
       tags: ['Lazada', 'Online Orders', 'Parcel'],
@@ -152,7 +163,7 @@ export class EmailParserService {
 
 
   // --- ROBLOX ---
-  private static parseRobloxEmail(subject: string, body: string, combined: string): ParsedTransactionDraft {
+  private static parseRobloxEmail(subject: string, body: string, combined: string, emailDate?: string): ParsedTransactionDraft {
     const amountMatch =
       combined.match(/(?:Total|Amount|Price)\s*[:=]?\s*(?:₱|PHP|Php|\$)?\s*([\d,]+\.?\d{0,2})/i) ||
       combined.match(/(?:₱|PHP|Php|\$)\s*([\d,]+\.?\d{0,2})/i);
@@ -167,7 +178,7 @@ export class EmailParserService {
     return {
       description,
       amount: amount > 0 ? amount : 250.0,
-      date: new Date().toISOString(),
+      date: emailDate || new Date().toISOString(),
       paymentMethod: combined.toLowerCase().includes('gcash') ? 'GCASH' : 'CREDIT_CARD',
       source: 'Roblox (Email Sync)',
       tags: ['Roblox', 'Gaming', 'Entertainment'],
@@ -178,7 +189,7 @@ export class EmailParserService {
   }
 
   // --- NETFLIX ---
-  private static parseNetflixEmail(subject: string, body: string, combined: string): ParsedTransactionDraft {
+  private static parseNetflixEmail(subject: string, body: string, combined: string, emailDate?: string): ParsedTransactionDraft {
     const amountMatch =
       combined.match(/(?:₱|PHP|Php)\s*([\d,]+\.?\d{0,2})/i) ||
       combined.match(/(?:amount of|billed|charged)\s*(?:₱|PHP|Php|\$)?\s*([\d,]+\.?\d{0,2})/i);
@@ -187,7 +198,7 @@ export class EmailParserService {
     return {
       description: 'Netflix Subscription',
       amount,
-      date: new Date().toISOString(),
+      date: emailDate || new Date().toISOString(),
       paymentMethod: combined.toLowerCase().includes('gcash') ? 'GCASH' : 'CREDIT_CARD',
       source: 'Netflix (Email Sync)',
       tags: ['Netflix', 'Streaming', 'Subscriptions'],
@@ -198,7 +209,7 @@ export class EmailParserService {
   }
 
   // --- GOOGLE PLAY ---
-  private static parseGooglePlayEmail(subject: string, body: string, combined: string): ParsedTransactionDraft {
+  private static parseGooglePlayEmail(subject: string, body: string, combined: string, emailDate?: string): ParsedTransactionDraft {
     // 🛡️ Filter out failed payments, declined charges, subscription cancellations, or payment issues
     if (
       combined.includes('payment declined') ||
@@ -293,7 +304,7 @@ export class EmailParserService {
     const description = itemName ? `Google Play - ${itemName}` : 'Google Play Digital Purchase';
 
     // Extract actual receipt date if available (e.g. "Order date: Aug 29, 2026")
-    let date = new Date().toISOString();
+    let date = emailDate || new Date().toISOString();
     const dateMatch =
       combined.match(/Order date:\s*([A-Za-z]+\s+\d{1,2},\s*\d{4}[^\n\r]*)/i) ||
       subject.match(/from\s+([A-Za-z]+\s+\d{1,2},\s*\d{4})/i);
@@ -324,7 +335,7 @@ export class EmailParserService {
   }
 
   // --- GCASH ---
-  private static parseGcashEmail(subject: string, body: string, combined: string): ParsedTransactionDraft {
+  private static parseGcashEmail(subject: string, body: string, combined: string, emailDate?: string): ParsedTransactionDraft {
     const amountMatch = combined.match(/(?:₱|PHP|paid|amount of)\s*([\d,]+\.?\d{0,2})/i);
     const amount = amountMatch ? this.extractNumeric(amountMatch[1]) : 0;
 
@@ -342,7 +353,7 @@ export class EmailParserService {
     return {
       description,
       amount: amount > 0 ? amount : 500.0,
-      date: new Date().toISOString(),
+      date: emailDate || new Date().toISOString(),
       paymentMethod: 'GCASH',
       source: 'GCash (Email Alert)',
       tags: isShopee ? ['Shopee', 'GCash', 'Email Auto-Forward'] : ['GCash', 'Email Auto-Forward'],
@@ -354,7 +365,7 @@ export class EmailParserService {
   }
 
   // --- FOOD DELIVERY (Grab / FoodPanda) ---
-  private static parseFoodDeliveryEmail(subject: string, body: string, combined: string): ParsedTransactionDraft {
+  private static parseFoodDeliveryEmail(subject: string, body: string, combined: string, emailDate?: string): ParsedTransactionDraft {
     const isGrab = combined.toLowerCase().includes('grab');
     const platform = isGrab ? 'GrabFood' : 'FoodPanda';
 
@@ -386,7 +397,7 @@ export class EmailParserService {
       return {
         description: 'Ignored Food Delivery Marketing Email',
         amount: 0,
-        date: new Date().toISOString(),
+        date: emailDate || new Date().toISOString(),
         paymentMethod: 'OTHER',
         source: platform,
         tags: [],
@@ -404,7 +415,7 @@ export class EmailParserService {
       return {
         description: 'Ignored Non-Transactional Food Delivery Email',
         amount: 0,
-        date: new Date().toISOString(),
+        date: emailDate || new Date().toISOString(),
         paymentMethod: 'OTHER',
         source: platform,
         tags: [],
@@ -419,7 +430,7 @@ export class EmailParserService {
       return {
         description: 'Ignored Zero-Amount Food Delivery Email',
         amount: 0,
-        date: new Date().toISOString(),
+        date: emailDate || new Date().toISOString(),
         paymentMethod: 'OTHER',
         source: platform,
         tags: [],
@@ -435,7 +446,7 @@ export class EmailParserService {
     return {
       description: `${platform} Order`,
       amount,
-      date: new Date().toISOString(),
+      date: emailDate || new Date().toISOString(),
       paymentMethod: 'GCASH',
       source: `${platform} (Email Sync)`,
       tags: [platform, 'Food Delivery', 'Dining'],
@@ -447,7 +458,7 @@ export class EmailParserService {
   }
 
   // --- GENERIC FALLBACK ---
-  private static parseGenericReceiptEmail(subject: string, body: string, combined: string): ParsedTransactionDraft {
+  private static parseGenericReceiptEmail(subject: string, body: string, combined: string, emailDate?: string): ParsedTransactionDraft {
     const amountMatch =
       combined.match(/(?:₱|PHP|Php|\$)\s*([\d,]+\.?\d{0,2})/i) ||
       combined.match(/([\d,]+\.\d{2})/);
@@ -456,7 +467,7 @@ export class EmailParserService {
     return {
       description: subject ? `Receipt: ${subject.substring(0, 40)}` : 'Email Ingested Expense',
       amount: amount > 0 ? amount : 100.0,
-      date: new Date().toISOString(),
+      date: emailDate || new Date().toISOString(),
       paymentMethod: 'CREDIT_CARD',
       source: 'Email Webhook',
       tags: ['Email Auto-Forward', 'Receipt'],
