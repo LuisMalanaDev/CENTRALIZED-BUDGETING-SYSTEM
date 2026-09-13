@@ -11,8 +11,9 @@ export class AnalyticsService {
     const currentDay = now.getDate();
     const daysRemaining = Math.max(1, totalDaysInMonth - currentDay + 1);
 
-    const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : new Date(currentYear, currentMonth, 1);
-    const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : new Date(currentYear, currentMonth + 1, 0, 23, 59, 59, 999);
+    const hasDateFilter = Boolean(dateFilter?.startDate || dateFilter?.endDate);
+    const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : null;
+    const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : null;
 
     return dbSafe(
       async () => {
@@ -22,11 +23,16 @@ export class AnalyticsService {
         });
         const totalNetWorth = accounts.reduce((sum, a) => sum + Number(a.balance), 0);
 
+        const whereClause: any = { userId };
+        if (hasDateFilter) {
+          whereClause.date = {
+            ...(startDate && { gte: startDate }),
+            ...(endDate && { lte: endDate }),
+          };
+        }
+
         const monthTransactions = await prisma.transaction.findMany({
-          where: {
-            userId,
-            date: { gte: startDate, lte: endDate },
-          },
+          where: whereClause,
           select: { amount: true, type: true },
         });
 
@@ -74,7 +80,8 @@ export class AnalyticsService {
 
         const monthTransactions = mockStore.transactions.filter(
           (t) => (t.userId === userId || t.userId === 'demo-user-uuid-1' || t.userId === 'user-liam') &&
-          new Date(t.date) >= startDate && new Date(t.date) <= endDate
+          (!startDate || new Date(t.date) >= startDate) &&
+          (!endDate || new Date(t.date) <= endDate)
         );
 
         let monthlyIncome = 0;
@@ -111,18 +118,25 @@ export class AnalyticsService {
   }
 
   static async getCategoryBreakdown(userId: string, dateFilter?: { startDate?: string; endDate?: string }) {
+    const hasDateFilter = Boolean(dateFilter?.startDate || dateFilter?.endDate);
+    const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : null;
+    const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : null;
+
     return dbSafe(
       async () => {
-        const now = new Date();
-        const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
-        const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        const whereClause: any = {
+          userId,
+          type: 'EXPENSE',
+        };
+        if (hasDateFilter) {
+          whereClause.date = {
+            ...(startDate && { gte: startDate }),
+            ...(endDate && { lte: endDate }),
+          };
+        }
 
         const expenses = await prisma.transaction.findMany({
-          where: {
-            userId,
-            type: 'EXPENSE',
-            date: { gte: startDate, lte: endDate },
-          },
+          where: whereClause,
           include: { category: true },
         });
 
@@ -146,14 +160,11 @@ export class AnalyticsService {
         return { breakdown, totalExpense: Math.round(totalExpense * 100) / 100 };
       },
       () => {
-        const now = new Date();
-        const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
-        const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
         const expenses = mockStore.transactions.filter(
           (t) => (t.userId === userId || t.userId === 'demo-user-uuid-1' || t.userId === 'user-liam') &&
           t.type === 'EXPENSE' &&
-          new Date(t.date) >= startDate && new Date(t.date) <= endDate
+          (!startDate || new Date(t.date) >= startDate) &&
+          (!endDate || new Date(t.date) <= endDate)
         );
 
         const categoryMap = new Map<string, { name: string; color: string; amount: number }>();
@@ -180,18 +191,25 @@ export class AnalyticsService {
   }
 
   static async getPaymentMethodShare(userId: string, dateFilter?: { startDate?: string; endDate?: string }) {
+    const hasDateFilter = Boolean(dateFilter?.startDate || dateFilter?.endDate);
+    const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : null;
+    const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : null;
+
     return dbSafe(
       async () => {
-        const now = new Date();
-        const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
-        const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        const whereClause: any = {
+          userId,
+          type: 'EXPENSE',
+        };
+        if (hasDateFilter) {
+          whereClause.date = {
+            ...(startDate && { gte: startDate }),
+            ...(endDate && { lte: endDate }),
+          };
+        }
 
         const transactions = await prisma.transaction.findMany({
-          where: {
-            userId,
-            type: 'EXPENSE',
-            date: { gte: startDate, lte: endDate },
-          },
+          where: whereClause,
           select: { paymentMethod: true, amount: true },
         });
 
@@ -213,14 +231,11 @@ export class AnalyticsService {
         return { shares, total: Math.round(total * 100) / 100 };
       },
       () => {
-        const now = new Date();
-        const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
-        const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
         const transactions = mockStore.transactions.filter(
           (t) => (t.userId === userId || t.userId === 'demo-user-uuid-1' || t.userId === 'user-liam') &&
           t.type === 'EXPENSE' &&
-          new Date(t.date) >= startDate && new Date(t.date) <= endDate
+          (!startDate || new Date(t.date) >= startDate) &&
+          (!endDate || new Date(t.date) <= endDate)
         );
 
         const methodMap = new Map<string, number>();
@@ -321,23 +336,30 @@ export class AnalyticsService {
   }
 
   static async getLifestyleShoppingTracker(userId: string, dateFilter?: { startDate?: string; endDate?: string }) {
+    const hasDateFilter = Boolean(dateFilter?.startDate || dateFilter?.endDate);
+    const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : null;
+    const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : null;
+
     return dbSafe(
       async () => {
-        const now = new Date();
-        const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
-        const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        const whereClause: any = {
+          userId,
+          type: 'EXPENSE',
+          OR: [
+            { isShopeeOrder: true },
+            { tags: { hasSome: ['Shopee', 'Groceries', 'Food', 'Dining Out'] } },
+            { source: { in: ['Shopee', 'GrabFood', 'FoodPanda', 'Supermarket'] } },
+          ],
+        };
+        if (hasDateFilter) {
+          whereClause.date = {
+            ...(startDate && { gte: startDate }),
+            ...(endDate && { lte: endDate }),
+          };
+        }
 
         const transactions = await prisma.transaction.findMany({
-          where: {
-            userId,
-            type: 'EXPENSE',
-            date: { gte: startDate, lte: endDate },
-            OR: [
-              { isShopeeOrder: true },
-              { tags: { hasSome: ['Shopee', 'Groceries', 'Food', 'Dining Out'] } },
-              { source: { in: ['Shopee', 'GrabFood', 'FoodPanda', 'Supermarket'] } },
-            ],
-          },
+          where: whereClause,
           include: { category: true, account: true },
           orderBy: { date: 'desc' },
         });
@@ -385,13 +407,10 @@ export class AnalyticsService {
         };
       },
       () => {
-        const now = new Date();
-        const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
-        const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
         const transactions = mockStore.transactions.filter(
           (t) => (t.userId === userId || t.userId === 'demo-user-uuid-1' || t.userId === 'user-liam') &&
-          new Date(t.date) >= startDate && new Date(t.date) <= endDate &&
+          (!startDate || new Date(t.date) >= startDate) &&
+          (!endDate || new Date(t.date) <= endDate) &&
           (t.isShopeeOrder || t.tags.includes('Shopee') || t.tags.includes('Groceries') || t.tags.includes('Food Delivery') || t.tags.includes('Food'))
         );
 
