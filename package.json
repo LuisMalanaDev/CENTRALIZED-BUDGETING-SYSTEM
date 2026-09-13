@@ -15,5 +15,13 @@
   },
   "keywords": ["finance", "budgeting", "wealthsync", "fastify", "nextjs", "prisma"],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma"
+    ]
+  }
 }
