@@ -73,16 +73,18 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
       setTransactions(txs);
 
       if (metricsRes) {
+        const inflow = metricsRes.totalInflow ?? metricsRes.totalIncome ?? metricsRes.monthlyIncome ?? 0;
+        const outflow = metricsRes.totalOutflow ?? metricsRes.totalExpenses ?? metricsRes.monthlyBurnRate ?? 0;
         setMetrics({
-          totalInflow: metricsRes.totalIncome || 0,
-          totalOutflow: metricsRes.totalExpenses || 0,
-          netCashflow: (metricsRes.totalIncome || 0) - (metricsRes.totalExpenses || 0),
-          budgetCap: metricsRes.budgetCap || 0,
+          totalInflow: Number(inflow),
+          totalOutflow: Number(outflow),
+          netCashflow: Number(inflow) - Number(outflow),
+          budgetCap: metricsRes.budgetCap || metricsRes.overallBudgetLimit || 0,
         });
       } else {
         // Compute locally from transactions
-        const inflow = txs.filter((t) => t.type === 'INCOME').reduce((acc, t) => acc + t.amount, 0);
-        const outflow = txs.filter((t) => t.type === 'EXPENSE').reduce((acc, t) => acc + t.amount, 0);
+        const inflow = txs.filter((t) => t.type === 'INCOME').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+        const outflow = txs.filter((t) => t.type === 'EXPENSE').reduce((acc, t) => acc + Number(t.amount || 0), 0);
         setMetrics({
           totalInflow: inflow,
           totalOutflow: outflow,
