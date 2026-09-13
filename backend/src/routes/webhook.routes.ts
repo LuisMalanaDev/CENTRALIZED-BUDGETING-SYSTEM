@@ -23,19 +23,37 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       }
     }
 
-    // If targetUserId is an email address, lookup the real user id
+    // If targetUserId is an email address, lookup or auto-create the user
     if (targetUserId && targetUserId.includes('@')) {
-      const userByEmail = await dbSafe(
-        () => prisma.user.findUnique({ where: { email: targetUserId.toLowerCase() } }),
-        () => mockStore.users.find((u) => u.email.toLowerCase() === targetUserId.toLowerCase())
+      const emailLower = targetUserId.toLowerCase();
+      let userByEmail = await dbSafe(
+        () => prisma.user.findUnique({ where: { email: emailLower } }),
+        () => mockStore.users.find((u) => u.email.toLowerCase() === emailLower)
       );
+
+      if (!userByEmail) {
+        // Auto-create user profile for new multi-user email
+        userByEmail = await dbSafe(
+          () =>
+            prisma.user.create({
+              data: {
+                email: emailLower,
+                name: emailLower.split('@')[0],
+                passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
+                currency: 'PHP',
+              },
+            }),
+          () => null
+        );
+      }
+
       if (userByEmail) {
         targetUserId = userByEmail.id;
       }
     }
 
     // Fallback: If still not identified, default to first user
-    if (!targetUserId) {
+    if (!targetUserId || targetUserId.includes('@')) {
       targetUserId = await dbSafe(
         async () => {
           const u = await prisma.user.findFirst();
@@ -58,12 +76,28 @@ export async function webhookRoutes(fastify: FastifyInstance) {
       const category = categories.find((c) => c.slug === parsed.suggestedCategorySlug) || categories[0];
 
       // 4. Look up default account (e.g. GCash)
-      const accounts = await dbSafe(
+      let accounts = await dbSafe(
         () => prisma.account.findMany({ where: { userId: targetUserId } }),
         () => mockStore.accounts.filter((a) => a.userId === targetUserId || a.userId === 'demo-user-uuid-1')
       );
 
-      const defaultAccount = accounts.find((a) => a.name.includes('GCash')) || accounts[0];
+      let defaultAccount: any = accounts.find((a) => a.name.includes('GCash')) || accounts[0];
+      if (!defaultAccount) {
+        defaultAccount = await dbSafe(
+          () =>
+            prisma.account.create({
+              data: {
+                userId: targetUserId,
+                name: 'GCash Wallet',
+                type: 'WALLET',
+                balance: 0,
+                color: '#007DFE',
+              },
+            }),
+          () => null
+        );
+      }
+
 
       // 5. Automatically record transaction into ledger
       const transaction = await TransactionService.createTransaction(targetUserId, {
