@@ -2,6 +2,7 @@ import fastify from 'fastify';
 import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import jwt from '@fastify/jwt';
+import rateLimit from '@fastify/rate-limit';
 import dotenv from 'dotenv';
 import { authRoutes } from './routes/auth.routes.js';
 import { accountRoutes } from './routes/account.routes.js';
@@ -59,6 +60,18 @@ async function main() {
       cookieName: 'token',
       signed: false,
     },
+  });
+
+  // Rate limiting plugin (120 requests/minute per client IP)
+  await server.register(rateLimit, {
+    max: 120,
+    timeWindow: '1 minute',
+    allowList: ['127.0.0.1'],
+    errorResponseBuilder: (_request, context) => ({
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: `Rate limit exceeded. Too many requests. Please try again in ${Math.ceil(context.ttl / 1000)} seconds.`,
+    }),
   });
 
   // Health check endpoint
