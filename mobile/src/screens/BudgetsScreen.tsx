@@ -66,6 +66,41 @@ function computeETA(currentAmount: number, targetAmount: number, targetDate?: st
   return etaDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
+const VAULT_ICON_MAP: Record<string, keyof typeof Ionicons.glyphMap> = {
+  // Lucide backend/web mappings
+  ShieldCheck: 'shield-checkmark',
+  Shield: 'shield',
+  PiggyBank: 'wallet',
+  Wallet: 'wallet',
+  Target: 'trophy',
+  Sparkles: 'sparkles',
+  TrendingUp: 'trending-up',
+  Lock: 'lock-closed',
+  Award: 'ribbon',
+  Heart: 'heart',
+  Gift: 'gift',
+  Home: 'home',
+  Car: 'car',
+  Plane: 'airplane',
+  Smartphone: 'phone-portrait',
+  Laptop: 'laptop',
+  // Ionicons names
+  'shield-checkmark': 'shield-checkmark',
+  airplane: 'airplane',
+  'phone-portrait': 'phone-portrait',
+  cart: 'cart',
+  home: 'home',
+  book: 'book',
+  medkit: 'medkit',
+  trophy: 'trophy',
+};
+
+function getVaultIcon(icon?: string): keyof typeof Ionicons.glyphMap {
+  if (!icon) return 'shield-checkmark';
+  return VAULT_ICON_MAP[icon] || 'shield-checkmark';
+}
+
+
 export const BudgetsScreen: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'BUDGETS' | 'VAULTS'>('BUDGETS');
@@ -528,7 +563,7 @@ export const BudgetsScreen: React.FC = () => {
                         )}
                         {/* Center Icon + Percent */}
                         <View style={[styles.vaultRingCenter, { width: RING_SIZE - RING_THICKNESS * 2 - 4, height: RING_SIZE - RING_THICKNESS * 2 - 4, borderRadius: (RING_SIZE - RING_THICKNESS * 2 - 4) / 2 }]}>
-                          <Ionicons name={(v.icon as any) || 'shield-checkmark'} size={16} color={vaultColor} />
+                          <Ionicons name={getVaultIcon(v.icon)} size={16} color={vaultColor} />
                           <Text style={[styles.vaultRingPct, { color: vaultColor }]}>{percent}%</Text>
                         </View>
                       </View>
