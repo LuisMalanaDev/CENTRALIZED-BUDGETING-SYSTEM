@@ -11,6 +11,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
     const summary = await AnalyticsService.getSummary(request.user.userId, {
       startDate: query.startDate,
       endDate: query.endDate,
+      timezone: query.timezone || query.tz,
     });
     return reply.send(summary);
   });
@@ -21,6 +22,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
     const breakdown = await AnalyticsService.getCategoryBreakdown(request.user.userId, {
       startDate: query.startDate,
       endDate: query.endDate,
+      timezone: query.timezone || query.tz,
     });
     return reply.send(breakdown);
   });
@@ -31,6 +33,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
     const share = await AnalyticsService.getPaymentMethodShare(request.user.userId, {
       startDate: query.startDate,
       endDate: query.endDate,
+      timezone: query.timezone || query.tz,
     });
     return reply.send(share);
   });
@@ -49,6 +52,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
     const trackerData = await AnalyticsService.getLifestyleShoppingTracker(request.user.userId, {
       startDate: query.startDate,
       endDate: query.endDate,
+      timezone: query.timezone || query.tz,
     });
     return reply.send(trackerData);
   });

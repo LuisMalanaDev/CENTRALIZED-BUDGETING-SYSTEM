@@ -1,9 +1,10 @@
 import { prisma } from '../prisma.js';
 import { mockStore } from './mockStore.js';
 import { dbSafe } from './dbHelper.js';
+import { parseDateBounds } from '../utils/dateHelper.js';
 
 export class AnalyticsService {
-  static async getSummary(userId: string, dateFilter?: { startDate?: string; endDate?: string }) {
+  static async getSummary(userId: string, dateFilter?: { startDate?: string; endDate?: string; timezone?: string }) {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
@@ -11,9 +12,8 @@ export class AnalyticsService {
     const currentDay = now.getDate();
     const daysRemaining = Math.max(1, totalDaysInMonth - currentDay + 1);
 
-    const hasDateFilter = Boolean(dateFilter?.startDate || dateFilter?.endDate);
-    const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : null;
-    const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : null;
+    const { startDate, endDate } = parseDateBounds(dateFilter?.startDate, dateFilter?.endDate, dateFilter?.timezone);
+    const hasDateFilter = Boolean(startDate || endDate);
 
     return dbSafe(
       async () => {
@@ -117,10 +117,9 @@ export class AnalyticsService {
     );
   }
 
-  static async getCategoryBreakdown(userId: string, dateFilter?: { startDate?: string; endDate?: string }) {
-    const hasDateFilter = Boolean(dateFilter?.startDate || dateFilter?.endDate);
-    const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : null;
-    const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : null;
+  static async getCategoryBreakdown(userId: string, dateFilter?: { startDate?: string; endDate?: string; timezone?: string }) {
+    const { startDate, endDate } = parseDateBounds(dateFilter?.startDate, dateFilter?.endDate, dateFilter?.timezone);
+    const hasDateFilter = Boolean(startDate || endDate);
 
     return dbSafe(
       async () => {
@@ -190,10 +189,9 @@ export class AnalyticsService {
     );
   }
 
-  static async getPaymentMethodShare(userId: string, dateFilter?: { startDate?: string; endDate?: string }) {
-    const hasDateFilter = Boolean(dateFilter?.startDate || dateFilter?.endDate);
-    const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : null;
-    const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : null;
+  static async getPaymentMethodShare(userId: string, dateFilter?: { startDate?: string; endDate?: string; timezone?: string }) {
+    const { startDate, endDate } = parseDateBounds(dateFilter?.startDate, dateFilter?.endDate, dateFilter?.timezone);
+    const hasDateFilter = Boolean(startDate || endDate);
 
     return dbSafe(
       async () => {
@@ -335,10 +333,9 @@ export class AnalyticsService {
     );
   }
 
-  static async getLifestyleShoppingTracker(userId: string, dateFilter?: { startDate?: string; endDate?: string }) {
-    const hasDateFilter = Boolean(dateFilter?.startDate || dateFilter?.endDate);
-    const startDate = dateFilter?.startDate ? new Date(dateFilter.startDate) : null;
-    const endDate = dateFilter?.endDate ? new Date(dateFilter.endDate) : null;
+  static async getLifestyleShoppingTracker(userId: string, dateFilter?: { startDate?: string; endDate?: string; timezone?: string }) {
+    const { startDate, endDate } = parseDateBounds(dateFilter?.startDate, dateFilter?.endDate, dateFilter?.timezone);
+    const hasDateFilter = Boolean(startDate || endDate);
 
     return dbSafe(
       async () => {

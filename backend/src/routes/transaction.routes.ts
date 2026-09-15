@@ -37,6 +37,7 @@ export async function transactionRoutes(fastify: FastifyInstance) {
       paymentMethod: query.paymentMethod as PaymentMethod,
       startDate: query.startDate,
       endDate: query.endDate,
+      timezone: query.timezone || query.tz,
       search: query.search,
       isShopeeOrder: query.isShopeeOrder !== undefined ? query.isShopeeOrder === 'true' : undefined,
     };

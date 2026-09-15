@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -35,6 +35,13 @@ export const DateFilterModal: React.FC<DateFilterModalProps> = ({
 }) => {
   const [activeYear, setActiveYear] = useState(currentFilter.year);
   const [activeMonth, setActiveMonth] = useState(currentFilter.month);
+
+  useEffect(() => {
+    if (visible) {
+      setActiveYear(currentFilter.year);
+      setActiveMonth(currentFilter.month);
+    }
+  }, [visible, currentFilter.year, currentFilter.month]);
 
   const getDaysInMonth = (year: number, month: number) => {
     return new Date(year, month + 1, 0).getDate();

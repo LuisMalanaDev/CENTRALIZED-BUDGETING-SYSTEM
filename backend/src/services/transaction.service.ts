@@ -2,6 +2,7 @@ import { prisma } from '../prisma.js';
 import { TransactionType, PaymentMethod, Prisma } from '@prisma/client';
 import { mockStore, MockTransaction } from './mockStore.js';
 import { dbSafe } from './dbHelper.js';
+import { parseDateBounds } from '../utils/dateHelper.js';
 
 export interface ListTransactionsFilter {
   page?: number;
@@ -11,6 +12,7 @@ export interface ListTransactionsFilter {
   paymentMethod?: PaymentMethod;
   startDate?: string;
   endDate?: string;
+  timezone?: string;
   search?: string;
   isShopeeOrder?: boolean;
 }
@@ -37,6 +39,8 @@ export class TransactionService {
     const limit = Math.max(1, Math.min(100, filters.limit || 20));
     const skip = (page - 1) * limit;
 
+    const { startDate, endDate } = parseDateBounds(filters.startDate, filters.endDate, filters.timezone);
+
     return dbSafe(
       async () => {
         const where: Prisma.TransactionWhereInput = {
@@ -45,11 +49,11 @@ export class TransactionService {
           ...(filters.categoryId && { categoryId: filters.categoryId }),
           ...(filters.paymentMethod && { paymentMethod: filters.paymentMethod }),
           ...(filters.isShopeeOrder !== undefined && { isShopeeOrder: filters.isShopeeOrder }),
-          ...(filters.startDate || filters.endDate
+          ...(startDate || endDate
             ? {
                 date: {
-                  ...(filters.startDate && { gte: new Date(filters.startDate) }),
-                  ...(filters.endDate && { lte: new Date(filters.endDate) }),
+                  ...(startDate && { gte: startDate }),
+                  ...(endDate && { lte: endDate }),
                 },
               }
             : {}),
@@ -112,12 +116,12 @@ export class TransactionService {
             (t.orderTrackingNumber && t.orderTrackingNumber.toLowerCase().includes(s))
           );
         }
-        if (filters.startDate) {
-          const start = new Date(filters.startDate).getTime();
+        if (startDate) {
+          const start = startDate.getTime();
           list = list.filter((t) => new Date(t.date).getTime() >= start);
         }
-        if (filters.endDate) {
-          const end = new Date(filters.endDate).getTime();
+        if (endDate) {
+          const end = endDate.getTime();
           list = list.filter((t) => new Date(t.date).getTime() <= end);
         }
 

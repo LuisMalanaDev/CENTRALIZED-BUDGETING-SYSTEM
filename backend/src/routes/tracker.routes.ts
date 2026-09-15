@@ -3,6 +3,7 @@ import { authenticate } from '../plugins/auth.js';
 import { prisma } from '../prisma.js';
 import { mockStore, MockTransaction } from '../services/mockStore.js';
 import { dbSafe } from '../services/dbHelper.js';
+import { parseDateBounds } from '../utils/dateHelper.js';
 
 export async function trackerRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticate);
@@ -45,10 +46,11 @@ export async function trackerRoutes(fastify: FastifyInstance) {
           ],
         };
 
-        if (query.startDate && query.endDate) {
+        const { startDate, endDate } = parseDateBounds(query.startDate, query.endDate, query.timezone || query.tz);
+        if (startDate || endDate) {
           whereClause.date = {
-            gte: new Date(query.startDate),
-            lte: new Date(query.endDate),
+            ...(startDate && { gte: startDate }),
+            ...(endDate && { lte: endDate }),
           };
         }
 
