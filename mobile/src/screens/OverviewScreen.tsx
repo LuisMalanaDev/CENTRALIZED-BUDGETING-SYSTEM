@@ -17,6 +17,8 @@ import { Colors } from '../constants/theme';
 import { api } from '../api/client';
 import { DateFilterBar } from '../components/DateFilterBar';
 import { ProfileModal } from '../components/ProfileModal';
+import { SpendingDonutChart } from '../components/SpendingDonutChart';
+import { CashflowBarChart } from '../components/CashflowBarChart';
 import { DateRangeFilter, Transaction, Account } from '../types';
 import { getCategoryName } from '../utils/format';
 
@@ -42,6 +44,9 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
     netCashflow: 0,
     budgetCap: 0,
   });
+  const [breakdown, setBreakdown] = useState<{ name: string; amount: number; percentage: number; color: string }[]>([]);
+  const [totalExpense, setTotalExpense] = useState(0);
+  const [cashflow, setCashflow] = useState<any[]>([]);
 
   const [txPage, setTxPage] = useState(1);
   const TX_PAGE_SIZE = 6;
@@ -63,15 +68,31 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
         query = `?startDate=${filter.startDate}&endDate=${filter.endDate}`;
       }
 
-      const [accountsRes, transRes, metricsRes] = await Promise.all([
+      const [accountsRes, transRes, metricsRes, breakdownRes, cashflowRes] = await Promise.all([
         api.get<{ accounts: Account[] }>('/api/accounts').catch(() => ({ accounts: [] })),
         api.get<{ transactions: Transaction[] }>(`/api/transactions${query}`).catch(() => ({ transactions: [] })),
         api.get<any>(`/api/analytics/summary${query}`).catch(() => null),
+        api.get<any>(`/api/analytics/breakdown${query}`).catch(() => null),
+        api.get<any>('/api/analytics/cashflow?months=6').catch(() => null),
       ]);
 
       setAccounts(accountsRes.accounts || []);
       const txs = transRes.transactions || [];
       setTransactions(txs);
+
+      if (breakdownRes?.breakdown) {
+        setBreakdown(breakdownRes.breakdown);
+        setTotalExpense(breakdownRes.totalExpense || 0);
+      } else {
+        setBreakdown([]);
+        setTotalExpense(0);
+      }
+
+      if (cashflowRes?.cashflow) {
+        setCashflow(cashflowRes.cashflow);
+      } else {
+        setCashflow([]);
+      }
 
       if (metricsRes) {
         const inflow = metricsRes.totalInflow ?? metricsRes.totalIncome ?? metricsRes.monthlyIncome ?? 0;
@@ -384,6 +405,40 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
             </View>
             <Text style={styles.statValue}>{transactions.length} items</Text>
           </View>
+        </View>
+      </View>
+
+      {/* 📊 Spending Breakdown Donut Chart */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Spending Breakdown</Text>
+          <Text style={styles.sectionBadge}>{filter.label}</Text>
+        </View>
+        <View style={styles.chartCard}>
+          {loading ? (
+            <ActivityIndicator color={Colors.white} style={{ marginVertical: 20 }} />
+          ) : (
+            <SpendingDonutChart
+              breakdown={breakdown}
+              totalExpense={totalExpense}
+              currencySymbol={currencySymbol}
+            />
+          )}
+        </View>
+      </View>
+
+      {/* 📈 6-Month Cashflow Trend */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Cashflow Trend</Text>
+          <Text style={styles.sectionBadge}>Last 6 Months</Text>
+        </View>
+        <View style={styles.chartCard}>
+          {loading ? (
+            <ActivityIndicator color={Colors.white} style={{ marginVertical: 20 }} />
+          ) : (
+            <CashflowBarChart cashflow={cashflow} currencySymbol={currencySymbol} />
+          )}
         </View>
       </View>
 
@@ -1109,5 +1164,12 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 11,
     fontWeight: '600',
+  },
+  chartCard: {
+    backgroundColor: Colors.surfaceCard,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 16,
   },
 });

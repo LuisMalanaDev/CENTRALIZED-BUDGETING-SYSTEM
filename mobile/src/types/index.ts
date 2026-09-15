@@ -58,6 +58,11 @@ export interface SavingsVault {
   currentAmount: number;
   targetDate?: string;
   color?: string;
+  icon?: string;
+  isLocked?: boolean;
+  progressPercent?: number;
+  remainingAmount?: number;
+  isCompleted?: boolean;
 }
 
 export interface TrackerOrder {

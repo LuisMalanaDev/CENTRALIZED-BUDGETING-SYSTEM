@@ -29,6 +29,43 @@ const BUDGET_CATEGORIES = [
   { name: 'Other Expense', icon: 'ellipsis-horizontal-outline' },
 ];
 
+const VAULT_ICONS = [
+  { label: 'Emergency', emoji: '🛡️', icon: 'shield-checkmark' },
+  { label: 'Travel', emoji: '✈️', icon: 'airplane' },
+  { label: 'Gadget', emoji: '📱', icon: 'phone-portrait' },
+  { label: 'Shopping', emoji: '🛒', icon: 'cart' },
+  { label: 'Home', emoji: '🏠', icon: 'home' },
+  { label: 'Education', emoji: '📚', icon: 'book' },
+  { label: 'Health', emoji: '💊', icon: 'medkit' },
+  { label: 'Goal', emoji: '🎯', icon: 'trophy' },
+];
+
+const VAULT_COLORS = [
+  { label: 'Green', hex: '#10B981' },
+  { label: 'Blue', hex: '#3B82F6' },
+  { label: 'Purple', hex: '#8B5CF6' },
+  { label: 'Orange', hex: '#F59E0B' },
+  { label: 'Rose', hex: '#F43F5E' },
+  { label: 'Cyan', hex: '#06B6D4' },
+];
+
+/** Computes estimated completion month given current and target amounts + a daily/monthly save rate */
+function computeETA(currentAmount: number, targetAmount: number, targetDate?: string): string | null {
+  if (!targetDate) return null;
+  const remaining = targetAmount - currentAmount;
+  if (remaining <= 0) return null;
+  const target = new Date(targetDate);
+  const now = new Date();
+  const diffMs = target.getTime() - now.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  if (diffDays <= 0) return 'Past due date';
+  // Estimate monthly needed = remaining / months left
+  const monthsLeft = diffMs / (1000 * 60 * 60 * 24 * 30);
+  const monthlyNeeded = monthsLeft > 0 ? remaining / monthsLeft : remaining;
+  const etaDate = new Date(now.getTime() + (remaining / (monthlyNeeded / 30)) * 24 * 60 * 60 * 1000);
+  return etaDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
 export const BudgetsScreen: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'BUDGETS' | 'VAULTS'>('BUDGETS');
@@ -51,6 +88,9 @@ export const BudgetsScreen: React.FC = () => {
   const [vaultNameInput, setVaultNameInput] = useState('');
   const [vaultTargetInput, setVaultTargetInput] = useState('');
   const [vaultInitialInput, setVaultInitialInput] = useState('');
+  const [vaultTargetDateInput, setVaultTargetDateInput] = useState('');
+  const [selectedVaultIcon, setSelectedVaultIcon] = useState(VAULT_ICONS[0].icon);
+  const [selectedVaultColor, setSelectedVaultColor] = useState(VAULT_COLORS[0].hex);
   const [savingVault, setSavingVault] = useState(false);
 
   // Vault Deposit/Withdraw Modal State
@@ -147,11 +187,17 @@ export const BudgetsScreen: React.FC = () => {
         name: vaultNameInput.trim(),
         targetAmount: target,
         currentAmount: initial,
+        icon: selectedVaultIcon,
+        color: selectedVaultColor,
+        targetDate: vaultTargetDateInput.trim() || undefined,
       });
       setVaultModalVisible(false);
       setVaultNameInput('');
       setVaultTargetInput('');
       setVaultInitialInput('');
+      setVaultTargetDateInput('');
+      setSelectedVaultIcon(VAULT_ICONS[0].icon);
+      setSelectedVaultColor(VAULT_COLORS[0].hex);
       fetchData();
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to create savings vault');
@@ -434,33 +480,122 @@ export const BudgetsScreen: React.FC = () => {
           ) : (
             <View style={styles.cardsList}>
               {paginatedVaults.map((v) => {
-                const percent = Math.min(
-                  100,
-                  Math.round(((v.currentAmount || 0) / (v.targetAmount || 1)) * 100)
-                );
+                const percent = v.progressPercent ??
+                  Math.min(100, Math.round(((v.currentAmount || 0) / (v.targetAmount || 1)) * 100));
+                const vaultColor = v.color || '#10B981';
+                const eta = computeETA(v.currentAmount || 0, v.targetAmount, v.targetDate);
+                const RING_SIZE = 72;
+                const RING_THICKNESS = 7;
+
                 return (
-                  <View key={v.id} style={styles.budgetCard}>
-                    <View style={styles.budgetTop}>
-                      <View style={styles.vaultTitleRow}>
-                        <Ionicons name="lock-closed" size={13} color={Colors.white} />
-                        <Text style={styles.budgetCat}>{v.name}</Text>
+                  <View key={v.id} style={[styles.vaultCard, v.isCompleted && styles.vaultCardCompleted]}>
+                    {/* Top Row: Ring + Info */}
+                    <View style={styles.vaultCardTopRow}>
+                      {/* Circular Progress Ring */}
+                      <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                        {/* Ring background */}
+                        <View
+                          style={[
+                            styles.vaultRingBg,
+                            {
+                              width: RING_SIZE,
+                              height: RING_SIZE,
+                              borderRadius: RING_SIZE / 2,
+                              borderWidth: RING_THICKNESS,
+                              borderColor: Colors.border,
+                            },
+                          ]}
+                        />
+                        {/* Ring fill (using border color trick with rotation) */}
+                        {percent > 0 && (
+                          <View
+                            style={[
+                              styles.vaultRingFill,
+                              {
+                                width: RING_SIZE,
+                                height: RING_SIZE,
+                                borderRadius: RING_SIZE / 2,
+                                borderWidth: RING_THICKNESS,
+                                borderColor: vaultColor,
+                                borderRightColor: percent < 25 ? 'transparent' : vaultColor,
+                                borderBottomColor: percent < 50 ? 'transparent' : vaultColor,
+                                borderLeftColor: percent < 75 ? 'transparent' : vaultColor,
+                                transform: [{ rotate: `${(percent / 100) * 360 - 90}deg` }],
+                                opacity: 0.9,
+                              },
+                            ]}
+                          />
+                        )}
+                        {/* Center Icon + Percent */}
+                        <View style={[styles.vaultRingCenter, { width: RING_SIZE - RING_THICKNESS * 2 - 4, height: RING_SIZE - RING_THICKNESS * 2 - 4, borderRadius: (RING_SIZE - RING_THICKNESS * 2 - 4) / 2 }]}>
+                          <Ionicons name={(v.icon as any) || 'shield-checkmark'} size={16} color={vaultColor} />
+                          <Text style={[styles.vaultRingPct, { color: vaultColor }]}>{percent}%</Text>
+                        </View>
                       </View>
-                      <Text style={styles.budgetPercent}>{percent}%</Text>
+
+                      {/* Vault Info */}
+                      <View style={styles.vaultCardInfo}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.vaultCardName} numberOfLines={1}>{v.name}</Text>
+                          {v.isLocked && (
+                            <Ionicons name="lock-closed" size={11} color={Colors.textMuted} />
+                          )}
+                          {v.isCompleted && (
+                            <Ionicons name="checkmark-circle" size={14} color={vaultColor} />
+                          )}
+                        </View>
+
+                        <Text style={styles.vaultCardSaved}>
+                          <Text style={[styles.vaultCardSavedAmt, { color: vaultColor }]}>
+                            {currencySymbol}{Number(v.currentAmount || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                          </Text>
+                          <Text style={styles.vaultCardOf}> of </Text>
+                          <Text style={styles.vaultCardTarget}>
+                            {currencySymbol}{Number(v.targetAmount || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                          </Text>
+                        </Text>
+
+                        {/* ETA */}
+                        {eta && !v.isCompleted && (
+                          <Text style={styles.vaultCardETA}>
+                            🗓 Goal by {eta}
+                          </Text>
+                        )}
+                        {v.isCompleted && (
+                          <Text style={[styles.vaultCardETA, { color: vaultColor }]}>
+                            ✅ Goal reached!
+                          </Text>
+                        )}
+                      </View>
+
+                      {/* Delete Button */}
+                      <TouchableOpacity
+                        onPress={() => {
+                          Alert.alert('Delete Vault', `Remove "${v.name}" savings vault?`, [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Delete',
+                              style: 'destructive',
+                              onPress: async () => {
+                                try {
+                                  await api.delete(`/api/vaults/${v.id}`);
+                                  fetchData();
+                                } catch (err: any) {
+                                  Alert.alert('Error', err.message || 'Failed to delete vault');
+                                }
+                              },
+                            },
+                          ]);
+                        }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="trash-outline" size={14} color={Colors.textMuted} />
+                      </TouchableOpacity>
                     </View>
 
+                    {/* Progress Track */}
                     <View style={styles.progressTrack}>
-                      <View style={[styles.progressBar, { width: `${percent}%`, backgroundColor: '#10B981' }]} />
-                    </View>
-
-                    <View style={styles.budgetBottom}>
-                      <Text style={styles.budgetSpent}>
-                        Saved: {currencySymbol}
-                        {Number(v.currentAmount || 0).toLocaleString()}
-                      </Text>
-                      <Text style={styles.budgetLimit}>
-                        Goal: {currencySymbol}
-                        {Number(v.targetAmount || 0).toLocaleString()}
-                      </Text>
+                      <View style={[styles.progressBar, { width: `${percent}%`, backgroundColor: vaultColor }]} />
                     </View>
 
                     {/* Deposit & Withdraw Action Buttons */}
@@ -475,7 +610,7 @@ export const BudgetsScreen: React.FC = () => {
                         activeOpacity={0.8}
                       >
                         <Ionicons name="add-circle" size={13} color="#4ADE80" />
-                        <Text style={styles.vaultActionTextDeposit}>Deposit</Text>
+                        <Text style={styles.vaultActionTextDeposit}>Add Funds</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
@@ -494,6 +629,7 @@ export const BudgetsScreen: React.FC = () => {
                   </View>
                 );
               })}
+
 
               {/* Vaults Pagination Controls */}
               {vaults.length > PAGE_SIZE && (
@@ -611,7 +747,7 @@ export const BudgetsScreen: React.FC = () => {
         onRequestClose={() => setVaultModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Create Savings Vault</Text>
               <TouchableOpacity onPress={() => setVaultModalVisible(false)}>
@@ -619,14 +755,50 @@ export const BudgetsScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
+            {/* Icon Picker */}
+            <Text style={styles.modalLabel}>Choose an Icon</Text>
+            <View style={styles.iconPickerRow}>
+              {VAULT_ICONS.map((icon) => {
+                const isSelected = selectedVaultIcon === icon.icon;
+                return (
+                  <TouchableOpacity
+                    key={icon.icon}
+                    style={[styles.iconPickerBtn, isSelected && { borderColor: selectedVaultColor, backgroundColor: `${selectedVaultColor}20` }]}
+                    onPress={() => setSelectedVaultIcon(icon.icon)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.iconPickerEmoji}>{icon.emoji}</Text>
+                    <Text style={[styles.iconPickerLabel, isSelected && { color: selectedVaultColor }]}>{icon.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Color Picker */}
+            <Text style={styles.modalLabel}>Choose a Color</Text>
+            <View style={styles.colorPickerRow}>
+              {VAULT_COLORS.map((c) => {
+                const isSelected = selectedVaultColor === c.hex;
+                return (
+                  <TouchableOpacity
+                    key={c.hex}
+                    style={[styles.colorPickerBtn, { backgroundColor: c.hex }, isSelected && styles.colorPickerBtnSelected]}
+                    onPress={() => setSelectedVaultColor(c.hex)}
+                    activeOpacity={0.8}
+                  >
+                    {isSelected && <Ionicons name="checkmark" size={16} color={Colors.white} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             <Text style={styles.modalLabel}>Goal / Vault Name</Text>
             <TextInput
               style={styles.modalInput}
-              placeholder="e.g. Emergency Fund, New PC"
+              placeholder="e.g. Emergency Fund, New PC, Travel"
               placeholderTextColor={Colors.textMuted}
               value={vaultNameInput}
               onChangeText={setVaultNameInput}
-              autoFocus
             />
 
             <Text style={styles.modalLabel}>Target Savings Goal ({currencySymbol})</Text>
@@ -639,7 +811,7 @@ export const BudgetsScreen: React.FC = () => {
               onChangeText={setVaultTargetInput}
             />
 
-            <Text style={styles.modalLabel}>Initial Locked Deposit (Optional)</Text>
+            <Text style={styles.modalLabel}>Initial Deposit (Optional)</Text>
             <TextInput
               style={styles.modalInput}
               placeholder="0.00"
@@ -649,20 +821,30 @@ export const BudgetsScreen: React.FC = () => {
               onChangeText={setVaultInitialInput}
             />
 
+            <Text style={styles.modalLabel}>Target Date (Optional, YYYY-MM-DD)</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="e.g. 2026-12-31"
+              placeholderTextColor={Colors.textMuted}
+              value={vaultTargetDateInput}
+              onChangeText={setVaultTargetDateInput}
+            />
+
             <TouchableOpacity
-              style={[styles.modalSubmitBtn, savingVault && { opacity: 0.6 }]}
+              style={[styles.modalSubmitBtn, { backgroundColor: selectedVaultColor }, savingVault && { opacity: 0.6 }]}
               onPress={handleSaveVault}
               disabled={savingVault}
             >
               {savingVault ? (
                 <ActivityIndicator color={Colors.black} size="small" />
               ) : (
-                <Text style={styles.modalSubmitBtnText}>Create Lockbox Vault</Text>
+                <Text style={styles.modalSubmitBtnText}>Create Vault</Text>
               )}
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
+
 
       {/* Vault Deposit/Withdraw Modal */}
       <Modal
@@ -1072,5 +1254,116 @@ const styles = StyleSheet.create({
   vaultActionGoalSub: {
     fontSize: 12,
     color: Colors.textMuted,
+  },
+  // ─── Upgraded Vault Card ────────────────────────────────────────────────
+  vaultCard: {
+    backgroundColor: Colors.surfaceCard,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 14,
+    gap: 12,
+  },
+  vaultCardCompleted: {
+    borderColor: '#10B981',
+    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+  },
+  vaultCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  vaultRingBg: {
+    position: 'absolute',
+  },
+  vaultRingFill: {
+    position: 'absolute',
+  },
+  vaultRingCenter: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    backgroundColor: Colors.surfaceCard,
+  },
+  vaultRingPct: {
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  vaultCardInfo: {
+    flex: 1,
+    gap: 3,
+  },
+  vaultCardName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  vaultCardSaved: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  vaultCardSavedAmt: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  vaultCardOf: {
+    fontSize: 12,
+    color: Colors.textMuted,
+  },
+  vaultCardTarget: {
+    fontSize: 12,
+    color: Colors.textMuted,
+  },
+  vaultCardETA: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  // ─── Icon & Color Pickers ────────────────────────────────────────────────
+  iconPickerRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  iconPickerBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '22%',
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceSubtle,
+    gap: 2,
+  },
+  iconPickerEmoji: {
+    fontSize: 20,
+  },
+  iconPickerLabel: {
+    fontSize: 9,
+    color: Colors.textMuted,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  colorPickerRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  colorPickerBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  colorPickerBtnSelected: {
+    borderWidth: 3,
+    borderColor: Colors.white,
   },
 });
