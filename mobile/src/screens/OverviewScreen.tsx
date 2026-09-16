@@ -119,9 +119,11 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
         query = `?startDate=${filter.startDate}&endDate=${filter.endDate}`;
       }
 
+      // DO NOT catch and return fake empty arrays for accounts & transactions.
+      // If offline, letting these throw ensures we branch to the catch block instead of wiping user data!
       const [accountsRes, transRes, metricsRes, breakdownRes, cashflowRes] = await Promise.all([
-        api.get<{ accounts: Account[] }>('/api/accounts').catch(() => ({ accounts: [] })),
-        api.get<{ transactions: Transaction[] }>(`/api/transactions${query}`).catch(() => ({ transactions: [] })),
+        api.get<{ accounts: Account[] }>('/api/accounts'),
+        api.get<{ transactions: Transaction[] }>(`/api/transactions${query}`),
         api.get<any>(`/api/analytics/summary${query}`).catch(() => null),
         api.get<any>(`/api/analytics/breakdown${query}`).catch(() => null),
         api.get<any>('/api/analytics/cashflow?months=6').catch(() => null),
@@ -192,8 +194,22 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           totalExpense: totExp,
         });
       }
-    } catch (e) {
-      console.warn('Overview fetch error:', e);
+    } catch (e: any) {
+      console.warn('Overview fetch error (offline or server unreachable):', e?.message || e);
+      // DEVICE IS OFFLINE: Restore and retain cached data! NEVER wipe state to 0!
+      try {
+        const cached = await offlineStorage.getOverviewCache();
+        if (cached) {
+          if (cached.accounts?.length) setAccounts(cached.accounts);
+          if (cached.transactions?.length) setTransactions(cached.transactions);
+          if (cached.metrics) setMetrics(cached.metrics);
+          if (cached.breakdown?.length) setBreakdown(cached.breakdown);
+          if (cached.cashflow?.length) setCashflow(cached.cashflow);
+          if (cached.totalExpense !== undefined) setTotalExpense(cached.totalExpense);
+        }
+      } catch (cacheErr) {
+        console.warn('Failed to restore cache on offline fallback:', cacheErr);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

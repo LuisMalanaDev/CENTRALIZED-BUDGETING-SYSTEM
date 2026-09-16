@@ -80,9 +80,8 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
       if (filter.startDate && filter.endDate) {
         query = `?startDate=${filter.startDate}&endDate=${filter.endDate}`;
       }
-      const res = await api.get<{ transactions: Transaction[] }>(`/api/transactions${query}`).catch(() => ({
-        transactions: [],
-      }));
+      // DO NOT catch and return fake empty arrays! Let network error throw to preserve cache!
+      const res = await api.get<{ transactions: Transaction[] }>(`/api/transactions${query}`);
 
       const offlineQueue = await offlineStorage.getOfflineQueue();
       const offlineTxs: Transaction[] = offlineQueue.map((item) => ({
@@ -103,8 +102,29 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
       if (serverTxs.length > 0) {
         offlineStorage.saveLedgerCache(serverTxs);
       }
-    } catch (e) {
-      console.warn('Ledger fetch error:', e);
+    } catch (e: any) {
+      console.warn('Ledger fetch error (offline):', e?.message || e);
+      // DEVICE IS OFFLINE: Restore and retain cached transactions + offline queue!
+      try {
+        const cached = await offlineStorage.getLedgerCache();
+        const offlineQueue = await offlineStorage.getOfflineQueue();
+        const offlineTxs: Transaction[] = offlineQueue.map((item) => ({
+          id: item.tempId,
+          amount: item.amount,
+          type: item.type,
+          category: item.category,
+          paymentMethod: item.paymentMethod,
+          description: item.description,
+          date: item.date,
+          isOfflinePending: true,
+        }));
+        const combined = [...offlineTxs, ...(cached?.transactions || [])];
+        if (combined.length > 0) {
+          setTransactions(combined);
+        }
+      } catch (cacheErr) {
+        console.warn('Ledger cache restore error:', cacheErr);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

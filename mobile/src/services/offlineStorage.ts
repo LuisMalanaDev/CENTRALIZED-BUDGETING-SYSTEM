@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../api/client';
-import { Account, CategoryBudget, SavingsVault, Transaction } from '../types';
+import { Account, CategoryBudget, SavingsVault, Transaction, TrackerOrder } from '../types';
 
 const OVERVIEW_CACHE_KEY = 'ws_cache_overview';
 const BUDGETS_CACHE_KEY = 'ws_cache_budgets';
 const LEDGER_CACHE_KEY = 'ws_cache_ledger';
+const TRACKER_CACHE_KEY = 'ws_cache_tracker';
 const OFFLINE_QUEUE_KEY = 'ws_offline_tx_queue';
 
 export interface OverviewCacheData {
@@ -30,6 +31,11 @@ export interface BudgetsCacheData {
 
 export interface LedgerCacheData {
   transactions: Transaction[];
+  timestamp: number;
+}
+
+export interface TrackerCacheData {
+  orders: TrackerOrder[];
   timestamp: number;
 }
 
@@ -114,6 +120,29 @@ export const offlineStorage = {
     }
   },
 
+  // --- Tracker Cache ---
+  async saveTrackerCache(orders: TrackerOrder[]): Promise<void> {
+    try {
+      const payload: TrackerCacheData = {
+        orders,
+        timestamp: Date.now(),
+      };
+      await AsyncStorage.setItem(TRACKER_CACHE_KEY, JSON.stringify(payload));
+    } catch (e) {
+      console.warn('Failed to save tracker cache:', e);
+    }
+  },
+
+  async getTrackerCache(): Promise<TrackerCacheData | null> {
+    try {
+      const raw = await AsyncStorage.getItem(TRACKER_CACHE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  },
+
   // --- Offline Transaction Queue ---
   async getOfflineQueue(): Promise<OfflineQueueItem[]> {
     try {
@@ -185,6 +214,7 @@ export const offlineStorage = {
         OVERVIEW_CACHE_KEY,
         BUDGETS_CACHE_KEY,
         LEDGER_CACHE_KEY,
+        TRACKER_CACHE_KEY,
         OFFLINE_QUEUE_KEY,
       ]);
     } catch (e) {

@@ -160,9 +160,10 @@ export const BudgetsScreen: React.FC = () => {
 
   const fetchData = useCallback(async () => {
     try {
+      // DO NOT catch and return empty arrays. Let network errors throw so we preserve cache!
       const [budgetsRes, vaultsRes] = await Promise.all([
-        api.get<{ budgets: CategoryBudget[] }>('/api/budgets').catch(() => ({ budgets: [] })),
-        api.get<{ vaults: SavingsVault[] }>('/api/vaults').catch(() => ({ vaults: [] })),
+        api.get<{ budgets: CategoryBudget[] }>('/api/budgets'),
+        api.get<{ vaults: SavingsVault[] }>('/api/vaults'),
       ]);
       const bList = budgetsRes.budgets || [];
       const vList = vaultsRes.vaults || [];
@@ -175,8 +176,18 @@ export const BudgetsScreen: React.FC = () => {
           vaults: vList,
         });
       }
-    } catch (e) {
-      console.warn('Budgets fetch error:', e);
+    } catch (e: any) {
+      console.warn('Budgets fetch error (offline):', e?.message || e);
+      // DEVICE IS OFFLINE: Restore and retain cached budgets & vaults!
+      try {
+        const cached = await offlineStorage.getBudgetsCache();
+        if (cached) {
+          if (cached.budgets?.length) setBudgets(cached.budgets);
+          if (cached.vaults?.length) setVaults(cached.vaults);
+        }
+      } catch (cacheErr) {
+        console.warn('Failed to restore budgets cache:', cacheErr);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
