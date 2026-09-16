@@ -19,6 +19,8 @@ import { DateFilterBar } from '../components/DateFilterBar';
 import { ProfileModal } from '../components/ProfileModal';
 import { SpendingDonutChart } from '../components/SpendingDonutChart';
 import { CashflowBarChart } from '../components/CashflowBarChart';
+import { AiAdvisorModal } from '../components/AiAdvisorModal';
+import { StatementModal } from '../components/StatementModal';
 import { DateRangeFilter, Transaction, Account } from '../types';
 import { getCategoryName } from '../utils/format';
 
@@ -133,6 +135,8 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
 
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [walletModalVisible, setWalletModalVisible] = useState(false);
+  const [aiAdvisorModalVisible, setAiAdvisorModalVisible] = useState(false);
+  const [statementModalVisible, setStatementModalVisible] = useState(false);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [balanceInput, setBalanceInput] = useState('');
   const [isResetting, setIsResetting] = useState(false);
@@ -347,6 +351,28 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
 
       {/* 31-Day Visual Calendar Filter Bar */}
       <DateFilterBar filter={filter} onFilterChange={onFilterChange} />
+
+      {/* Action Tools: AI Advisor & Monthly Statement */}
+      <View style={styles.actionToolsRow}>
+        <TouchableOpacity
+          style={styles.toolBtnAi}
+          onPress={() => setAiAdvisorModalVisible(true)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="sparkles" size={14} color="#A78BFA" />
+          <Text style={styles.toolBtnAiText}>AI Financial Insights</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.toolBtnStatement}
+          onPress={() => setStatementModalVisible(true)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="receipt-outline" size={14} color={Colors.white} />
+          <Text style={styles.toolBtnStatementText}>Statement & CSV</Text>
+        </TouchableOpacity>
+      </View>
+
 
       {/* 4 Quick Stat Cards (2x2 Grid) */}
       <View style={styles.statsGrid}>
@@ -645,6 +671,22 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
         onClose={() => setProfileModalVisible(false)}
         user={user}
         onLogout={logout}
+      />
+
+      {/* AI Financial Advisor Modal */}
+      <AiAdvisorModal
+        visible={aiAdvisorModalVisible}
+        onClose={() => setAiAdvisorModalVisible(false)}
+        filter={filter}
+      />
+
+      {/* Monthly Financial Statement & CSV Export Modal */}
+      <StatementModal
+        visible={statementModalVisible}
+        onClose={() => setStatementModalVisible(false)}
+        filter={filter}
+        transactions={transactions}
+        metrics={metrics}
       />
     </ScrollView>
   );
@@ -1172,4 +1214,47 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     padding: 16,
   },
+  actionToolsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  toolBtnAi: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(167, 139, 250, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(167, 139, 250, 0.3)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  toolBtnAiText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#DDD6FE',
+  },
+  toolBtnStatement: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.surfaceCard,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  toolBtnStatementText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.white,
+  },
 });
+
