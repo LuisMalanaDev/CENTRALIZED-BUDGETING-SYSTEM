@@ -193,6 +193,9 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           cashflow: cFlow,
           totalExpense: totExp,
         });
+        if (txs.length > 0) {
+          offlineStorage.saveLedgerCache(txs);
+        }
       }
     } catch (e: any) {
       console.warn('Overview fetch error (offline or server unreachable):', e?.message || e);

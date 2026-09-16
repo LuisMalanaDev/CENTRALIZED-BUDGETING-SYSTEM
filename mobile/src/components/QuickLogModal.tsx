@@ -245,13 +245,20 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({
       onSuccess();
       onClose();
     } catch (err: any) {
-      const msg = err.message || '';
+      const msg = (err.message || '').toLowerCase();
       const isNetworkError =
-        msg.includes('Cannot reach server') ||
+        Boolean(err.isNetworkError) ||
+        msg.includes('cannot reach server') ||
         msg.includes('took too long') ||
-        msg.includes('Network request failed') ||
-        msg.includes('AbortError') ||
-        msg.includes('Failed to fetch');
+        msg.includes('network request failed') ||
+        msg.includes('fetch failed') ||
+        msg.includes('unknownhostexception') ||
+        msg.includes('unable to resolve host') ||
+        msg.includes('failed to fetch') ||
+        msg.includes('aborterror') ||
+        msg.includes('enotfound') ||
+        msg.includes('econnrefused') ||
+        msg.includes('networkerror');
 
       if (isNetworkError) {
         // Enqueue transaction locally for later sync

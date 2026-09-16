@@ -45,7 +45,17 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
     let mounted = true;
     (async () => {
       try {
-        const cached = await offlineStorage.getLedgerCache();
+        let cachedTxs: Transaction[] = [];
+        const cachedLedger = await offlineStorage.getLedgerCache();
+        if (cachedLedger && cachedLedger.transactions?.length > 0) {
+          cachedTxs = cachedLedger.transactions;
+        } else {
+          const cachedOverview = await offlineStorage.getOverviewCache();
+          if (cachedOverview && cachedOverview.transactions?.length > 0) {
+            cachedTxs = cachedOverview.transactions;
+          }
+        }
+
         const offlineQueue = await offlineStorage.getOfflineQueue();
         const offlineTxs: Transaction[] = offlineQueue.map((item) => ({
           id: item.tempId,
@@ -59,7 +69,7 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
         }));
 
         if (mounted) {
-          const initialTxs = [...offlineTxs, ...(cached?.transactions || [])];
+          const initialTxs = [...offlineTxs, ...cachedTxs];
           if (initialTxs.length > 0) {
             setTransactions(initialTxs);
             setLoading(false);

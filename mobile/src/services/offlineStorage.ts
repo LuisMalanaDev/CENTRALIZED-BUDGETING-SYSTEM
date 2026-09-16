@@ -156,13 +156,69 @@ export const offlineStorage = {
 
   async enqueueOfflineTransaction(item: Omit<OfflineQueueItem, 'tempId' | 'createdAt'>): Promise<OfflineQueueItem> {
     const queue = await this.getOfflineQueue();
+    const tempId = `offline_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const newItem: OfflineQueueItem = {
       ...item,
-      tempId: `offline_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      tempId,
       createdAt: Date.now(),
     };
     queue.push(newItem);
     await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+
+    // Optimistically update Overview & Ledger caches so UI updates in real time
+    try {
+      const newTx: Transaction = {
+        id: tempId,
+        amount: item.amount,
+        type: item.type,
+        category: item.category,
+        paymentMethod: item.paymentMethod,
+        description: item.description,
+        date: item.date,
+        isOfflinePending: true,
+      };
+
+      // 1. Update Ledger cache
+      const ledgerCache = await this.getLedgerCache();
+      const existingLedger = ledgerCache?.transactions || [];
+      await this.saveLedgerCache([newTx, ...existingLedger]);
+
+      // 2. Update Overview cache
+      const overviewCache = await this.getOverviewCache();
+      if (overviewCache) {
+        const updatedTxs = [newTx, ...(overviewCache.transactions || [])];
+        const isExpense = item.type === 'EXPENSE';
+        const isIncome = item.type === 'INCOME';
+        const newInflow = overviewCache.metrics.totalInflow + (isIncome ? item.amount : 0);
+        const newOutflow = overviewCache.metrics.totalOutflow + (isExpense ? item.amount : 0);
+
+        // Deduct from matching wallet balance
+        const updatedAccounts = (overviewCache.accounts || []).map((acc) => {
+          const accName = acc.name.toUpperCase();
+          const pm = item.paymentMethod.toUpperCase();
+          if (accName.includes(pm) || (pm === 'CASH' && accName.includes('CASH'))) {
+            const diff = isExpense ? -item.amount : isIncome ? item.amount : 0;
+            return { ...acc, balance: Number(acc.balance) + diff };
+          }
+          return acc;
+        });
+
+        await this.saveOverviewCache({
+          ...overviewCache,
+          accounts: updatedAccounts,
+          transactions: updatedTxs,
+          metrics: {
+            ...overviewCache.metrics,
+            totalInflow: newInflow,
+            totalOutflow: newOutflow,
+            netCashflow: newInflow - newOutflow,
+          },
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to optimistically update cache on offline enqueue:', e);
+    }
+
     return newItem;
   },
 

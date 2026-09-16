@@ -76,11 +76,26 @@ class ApiClient {
       return await response.json();
     } catch (err: any) {
       clearTimeout(timeoutId);
-      if (err.name === 'AbortError') {
-        throw new Error('Server took too long to respond. The cloud service may be waking up, please try again.');
+      const msg = (err.message || '').toLowerCase();
+      if (err.name === 'AbortError' || msg.includes('aborterror') || msg.includes('timeout')) {
+        const netErr = new Error('Server took too long to respond. The cloud service may be waking up, please try again.');
+        (netErr as any).isNetworkError = true;
+        throw netErr;
       }
-      if (err.message && err.message.includes('Network request failed')) {
-        throw new Error('Cannot reach server. Check internet connection or backend status.');
+      if (
+        msg.includes('network request failed') ||
+        msg.includes('fetch failed') ||
+        msg.includes('unknownhostexception') ||
+        msg.includes('unable to resolve host') ||
+        msg.includes('failed to fetch') ||
+        msg.includes('networkerror') ||
+        msg.includes('enotfound') ||
+        msg.includes('econnrefused') ||
+        msg.includes('econnreset')
+      ) {
+        const netErr = new Error('Cannot reach server. Check internet connection or backend status.');
+        (netErr as any).isNetworkError = true;
+        throw netErr;
       }
       throw err;
     }
