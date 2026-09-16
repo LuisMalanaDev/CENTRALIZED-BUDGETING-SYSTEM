@@ -47,6 +47,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
     netCashflow: number;
     budgetCap: number;
     activeMonthInflow?: number;
+    activeMonthOutflow?: number;
   }
 
   const [metrics, setMetrics] = useState<MetricsState>({
@@ -55,6 +56,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
     netCashflow: 0,
     budgetCap: 0,
     activeMonthInflow: 0,
+    activeMonthOutflow: 0,
   });
   const [breakdown, setBreakdown] = useState<{ name: string; amount: number; percentage: number; color: string }[]>([]);
   const [totalExpense, setTotalExpense] = useState(0);
@@ -163,12 +165,13 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
         setCashflow([]);
       }
 
-      let newMetrics = {
+      let newMetrics: MetricsState = {
         totalInflow: 0,
         totalOutflow: 0,
         netCashflow: 0,
         budgetCap: 0,
         activeMonthInflow: 0,
+        activeMonthOutflow: 0,
       };
 
       if (metricsRes) {
@@ -180,6 +183,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           netCashflow: Number(inflow) - Number(outflow),
           budgetCap: metricsRes.budgetCap || metricsRes.overallBudgetLimit || 0,
           activeMonthInflow: Number(metricsRes.activeMonthInflow || inflow),
+          activeMonthOutflow: Number(metricsRes.activeMonthOutflow || outflow),
         };
       } else {
         // Compute locally from transactions
@@ -191,6 +195,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           netCashflow: inflow - outflow,
           budgetCap: 0,
           activeMonthInflow: inflow,
+          activeMonthOutflow: outflow,
         };
       }
       setMetrics(newMetrics);
@@ -335,17 +340,27 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
   const totalMoneyLeft = accounts.reduce((acc, a) => acc + (Number(a.balance) || 0), 0);
 
   // Inflow vs Outflow calculations
-  const inflow = metrics.totalInflow || 0;
-  const outflow = metrics.totalOutflow || 0;
+  const inflow = Number(metrics.totalInflow || 0);
+  const outflow = Number(metrics.totalOutflow || 0);
 
-  // Persistent Inflow Anchor (Approach B):
-  // When viewing a single day with 0 daily inflow, anchor to the month's active inflow pool so it never drops to ₱0!
-  const activeMonthInflow = (metrics as any).activeMonthInflow || metrics.totalInflow || 0;
-  const displayInflow = filter.type === 'day' && inflow === 0 ? activeMonthInflow : inflow;
-  const displayInflowLabel = filter.type === 'day' && inflow === 0 ? 'Active Month Inflow' : 'Total Inflow (Income)';
+  // Persistent Inflow:
+  // Inflow is NOT wiped out by single-day/date filters - always carries over the active month's income pool!
+  const activeMonthInflow = Number((metrics as any).activeMonthInflow || 0);
+  const displayInflow = activeMonthInflow > 0 ? activeMonthInflow : inflow;
 
-  const moneyLeftFromInflow = displayInflow > 0 ? displayInflow - outflow : totalMoneyLeft;
-  const percentUsed = displayInflow > 0 ? Math.min(100, Math.round((outflow / displayInflow) * 100)) : 0;
+  // Active month's total expenses (all expenses logged for this month/cycle)
+  const activeMonthOutflow = Number((metrics as any).activeMonthOutflow || outflow);
+
+  // Remaining Inflow (Money Left from Inflow):
+  // When viewing single days, remaining money from the active income pool is
+  // (displayInflow - activeMonthOutflow), so it reflects true money left in the active cycle.
+  // When viewing a month/period, it is (displayInflow - outflow).
+  const moneyLeftFromInflow = filter.type === 'day'
+    ? (displayInflow > 0 ? displayInflow - activeMonthOutflow : 0)
+    : (displayInflow > 0 ? displayInflow - outflow : 0);
+
+  const effectiveSpent = filter.type === 'day' ? activeMonthOutflow : outflow;
+  const percentUsed = displayInflow > 0 ? Math.min(100, Math.round((effectiveSpent / displayInflow) * 100)) : 0;
   const percentRemaining = Math.max(0, 100 - percentUsed);
 
   return (
@@ -419,13 +434,13 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
         </View>
       )}
 
-      {/* Main Persistent Wallet Balance Hero Card (Approach B) */}
+      {/* Main Inflow vs Expenses Hero Card (Money Left / Remaining Inflow) */}
       <View style={styles.heroCard}>
         <View style={styles.heroHeader}>
           <View>
-            <Text style={styles.heroLabel}>TOTAL AVAILABLE MONEY</Text>
+            <Text style={styles.heroLabel}>MONEY LEFT (REMAINING INFLOW)</Text>
             <Text style={styles.heroFilterNote}>
-              Active Balance Across {accounts.length} Wallets
+              {filter.type === 'day' ? `${filter.label || 'Today'} • Active Cycle` : (filter.label || 'Active Filter Period')}
             </Text>
           </View>
 
@@ -440,15 +455,15 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        {/* Big Persistent Available Cash Balance */}
+        {/* Big Remaining Inflow Amount */}
         <Text
           style={[
             styles.heroAmount,
-            totalMoneyLeft < 0 && { color: '#F87171' },
+            moneyLeftFromInflow < 0 && { color: '#F87171' },
           ]}
         >
           {currencySymbol}
-          {Number(totalMoneyLeft).toLocaleString('en-US', {
+          {Number(moneyLeftFromInflow).toLocaleString('en-US', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
           })}
@@ -460,7 +475,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
             <View style={styles.inflowCompareCol}>
               <View style={styles.inflowIndicatorDot} />
               <View>
-                <Text style={styles.inflowCompareLabel}>{displayInflowLabel}</Text>
+                <Text style={styles.inflowCompareLabel}>Total Inflow (Income)</Text>
                 <Text style={styles.inflowCompareVal}>
                   +{currencySymbol}{displayInflow.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </Text>
@@ -499,10 +514,10 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
               </View>
               <View style={styles.inflowProgressLabels}>
                 <Text style={styles.inflowProgressSub}>
-                  {percentUsed}% spent ({currencySymbol}{outflow.toLocaleString()})
+                  {percentUsed}% spent ({currencySymbol}{effectiveSpent.toLocaleString('en-US', { minimumFractionDigits: 2 })})
                 </Text>
                 <Text style={styles.inflowProgressSub}>
-                  {percentRemaining}% left ({currencySymbol}{Math.max(0, moneyLeftFromInflow).toLocaleString()})
+                  {percentRemaining}% left ({currencySymbol}{Math.max(0, moneyLeftFromInflow).toLocaleString('en-US', { minimumFractionDigits: 2 })})
                 </Text>
               </View>
             </View>
@@ -512,7 +527,6 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
             </Text>
           )}
         </View>
-
 
         {/* Action Button */}
         <TouchableOpacity

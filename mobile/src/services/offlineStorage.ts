@@ -17,6 +17,7 @@ export interface OverviewCacheData {
     netCashflow: number;
     budgetCap: number;
     activeMonthInflow?: number;
+    activeMonthOutflow?: number;
   };
   breakdown: { name: string; amount: number; percentage: number; color: string }[];
   cashflow: any[];

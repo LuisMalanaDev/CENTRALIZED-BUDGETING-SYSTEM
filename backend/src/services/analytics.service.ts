@@ -60,6 +60,19 @@ export class AnalyticsService {
         });
         const activeMonthInflow = currentMonthInflowTxs.reduce((sum, t) => sum + Number(t.amount), 0);
 
+        const currentMonthOutflowTxs = await prisma.transaction.findMany({
+          where: {
+            userId,
+            type: 'EXPENSE',
+            date: {
+              gte: startOfCurrentMonth,
+              lte: endOfCurrentMonth,
+            },
+          },
+          select: { amount: true },
+        });
+        const activeMonthOutflow = currentMonthOutflowTxs.reduce((sum, t) => sum + Number(t.amount), 0);
+
         const overallBudget = await prisma.budget.findFirst({
           where: { userId, categoryId: null },
         });
@@ -85,6 +98,7 @@ export class AnalyticsService {
           totalOutflow: Math.round(monthlyBurnRate * 100) / 100,
           totalInflow: Math.round(monthlyIncome * 100) / 100,
           activeMonthInflow: Math.round(activeMonthInflow * 100) / 100,
+          activeMonthOutflow: Math.round(activeMonthOutflow * 100) / 100,
           netCashflow: Math.round((monthlyIncome - monthlyBurnRate) * 100) / 100,
           overallBudgetLimit: overallBudget ? Number(overallBudget.amount) : 55000,
           remainingDailyBudget: dailyBudgetRemaining,
@@ -118,6 +132,15 @@ export class AnalyticsService {
           )
           .reduce((sum, t) => sum + t.amount, 0);
 
+        const activeMonthOutflow = mockStore.transactions
+          .filter(
+            (t) => (t.userId === userId || t.userId === 'demo-user-uuid-1' || t.userId === 'user-liam') &&
+            t.type === 'EXPENSE' &&
+            new Date(t.date).getMonth() === currentMonth &&
+            new Date(t.date).getFullYear() === currentYear
+          )
+          .reduce((sum, t) => sum + t.amount, 0);
+
         const overallBudget = mockStore.budgets.find(
           (b) => (b.userId === userId || b.userId === 'demo-user-uuid-1' || b.userId === 'user-liam') && !b.categoryId
         );
@@ -135,6 +158,7 @@ export class AnalyticsService {
           totalOutflow: Math.round(monthlyBurnRate * 100) / 100,
           totalInflow: Math.round(monthlyIncome * 100) / 100,
           activeMonthInflow: Math.round(activeMonthInflow * 100) / 100,
+          activeMonthOutflow: Math.round(activeMonthOutflow * 100) / 100,
           netCashflow: Math.round((monthlyIncome - monthlyBurnRate) * 100) / 100,
           overallBudgetLimit: budgetAmount,
           remainingDailyBudget: dailyBudgetRemaining,
