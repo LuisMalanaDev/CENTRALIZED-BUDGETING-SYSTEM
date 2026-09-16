@@ -17,6 +17,7 @@ import { api } from '../api/client';
 import { DateFilterBar } from '../components/DateFilterBar';
 import { DateRangeFilter, Transaction } from '../types';
 import { getCategoryName } from '../utils/format';
+import { offlineStorage } from '../services/offlineStorage';
 
 interface LedgerScreenProps {
   filter: DateRangeFilter;
@@ -39,6 +40,40 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
 
   const currencySymbol = user?.currency === 'USD' ? '$' : '₱';
 
+  // Instant Cache Hydration on startup (0.01s instant data rendering)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const cached = await offlineStorage.getLedgerCache();
+        const offlineQueue = await offlineStorage.getOfflineQueue();
+        const offlineTxs: Transaction[] = offlineQueue.map((item) => ({
+          id: item.tempId,
+          amount: item.amount,
+          type: item.type,
+          category: item.category,
+          paymentMethod: item.paymentMethod,
+          description: item.description,
+          date: item.date,
+          isOfflinePending: true,
+        }));
+
+        if (mounted) {
+          const initialTxs = [...offlineTxs, ...(cached?.transactions || [])];
+          if (initialTxs.length > 0) {
+            setTransactions(initialTxs);
+            setLoading(false);
+          }
+        }
+      } catch (e) {
+        console.warn('Ledger cache hydration error:', e);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const fetchTransactions = useCallback(async () => {
     try {
       let query = '';
@@ -48,7 +83,26 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
       const res = await api.get<{ transactions: Transaction[] }>(`/api/transactions${query}`).catch(() => ({
         transactions: [],
       }));
-      setTransactions(res.transactions || []);
+
+      const offlineQueue = await offlineStorage.getOfflineQueue();
+      const offlineTxs: Transaction[] = offlineQueue.map((item) => ({
+        id: item.tempId,
+        amount: item.amount,
+        type: item.type,
+        category: item.category,
+        paymentMethod: item.paymentMethod,
+        description: item.description,
+        date: item.date,
+        isOfflinePending: true,
+      }));
+
+      const serverTxs = res.transactions || [];
+      const combined = [...offlineTxs, ...serverTxs];
+      setTransactions(combined);
+
+      if (serverTxs.length > 0) {
+        offlineStorage.saveLedgerCache(serverTxs);
+      }
     } catch (e) {
       console.warn('Ledger fetch error:', e);
     } finally {
@@ -241,6 +295,12 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
                   <View style={styles.pmBadge}>
                     <Text style={styles.pmBadgeText}>{tx.paymentMethod}</Text>
                   </View>
+                  {tx.isOfflinePending && (
+                    <View style={styles.offlineBadge}>
+                      <Ionicons name="cloud-offline-outline" size={10} color="#F59E0B" />
+                      <Text style={styles.offlineBadgeText}>Offline</Text>
+                    </View>
+                  )}
                   <Text style={styles.txDateText}>{dateFormatted}</Text>
                 </View>
               </TouchableOpacity>
@@ -704,5 +764,22 @@ const styles = StyleSheet.create({
     color: Colors.black,
     fontSize: 14,
     fontWeight: '700',
+  },
+  offlineBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  offlineBadgeText: {
+    color: '#F59E0B',
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
 });

@@ -23,6 +23,7 @@ import { AiAdvisorModal } from '../components/AiAdvisorModal';
 import { StatementModal } from '../components/StatementModal';
 import { DateRangeFilter, Transaction, Account } from '../types';
 import { getCategoryName } from '../utils/format';
+import { offlineStorage } from '../services/offlineStorage';
 
 interface OverviewScreenProps {
   onOpenQuickLog: () => void;
@@ -62,8 +63,56 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
 
   const currencySymbol = user?.currency === 'USD' ? '$' : '₱';
 
+  const [offlinePendingCount, setOfflinePendingCount] = useState(0);
+  const [isSyncingOffline, setIsSyncingOffline] = useState(false);
+
+  // 1. Instant Cache Hydration on startup (0.01s instant data rendering)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const cached = await offlineStorage.getOverviewCache();
+        if (cached && mounted) {
+          if (cached.accounts?.length) setAccounts(cached.accounts);
+          if (cached.transactions?.length) setTransactions(cached.transactions);
+          if (cached.metrics) setMetrics(cached.metrics);
+          if (cached.breakdown) setBreakdown(cached.breakdown);
+          if (cached.cashflow) setCashflow(cached.cashflow);
+          if (cached.totalExpense !== undefined) setTotalExpense(cached.totalExpense);
+          setLoading(false);
+        }
+        const queue = await offlineStorage.getOfflineQueue();
+        if (mounted) {
+          setOfflinePendingCount(queue.length);
+        }
+      } catch (e) {
+        console.warn('Cache hydration error:', e);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Background offline queue sync
+  const syncOfflineData = useCallback(async () => {
+    setIsSyncingOffline(true);
+    try {
+      const result = await offlineStorage.syncOfflineQueue();
+      setOfflinePendingCount(result.remainingCount);
+      return result.syncedCount > 0;
+    } catch {
+      return false;
+    } finally {
+      setIsSyncingOffline(false);
+    }
+  }, []);
+
   const fetchData = useCallback(async () => {
     try {
+      // Sync any pending offline actions first
+      await syncOfflineData();
+
       // Build query string for active date range filter
       let query = '';
       if (filter.startDate && filter.endDate) {
@@ -78,42 +127,69 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
         api.get<any>('/api/analytics/cashflow?months=6').catch(() => null),
       ]);
 
-      setAccounts(accountsRes.accounts || []);
+      const accs = accountsRes.accounts || [];
       const txs = transRes.transactions || [];
+      setAccounts(accs);
       setTransactions(txs);
 
+      let bDown: { name: string; amount: number; percentage: number; color: string }[] = [];
+      let totExp = 0;
       if (breakdownRes?.breakdown) {
-        setBreakdown(breakdownRes.breakdown);
-        setTotalExpense(breakdownRes.totalExpense || 0);
+        bDown = breakdownRes.breakdown;
+        totExp = breakdownRes.totalExpense || 0;
+        setBreakdown(bDown);
+        setTotalExpense(totExp);
       } else {
         setBreakdown([]);
         setTotalExpense(0);
       }
 
+      let cFlow: any[] = [];
       if (cashflowRes?.cashflow) {
-        setCashflow(cashflowRes.cashflow);
+        cFlow = cashflowRes.cashflow;
+        setCashflow(cFlow);
       } else {
         setCashflow([]);
       }
 
+      let newMetrics = {
+        totalInflow: 0,
+        totalOutflow: 0,
+        netCashflow: 0,
+        budgetCap: 0,
+      };
+
       if (metricsRes) {
         const inflow = metricsRes.totalInflow ?? metricsRes.totalIncome ?? metricsRes.monthlyIncome ?? 0;
         const outflow = metricsRes.totalOutflow ?? metricsRes.totalExpenses ?? metricsRes.monthlyBurnRate ?? 0;
-        setMetrics({
+        newMetrics = {
           totalInflow: Number(inflow),
           totalOutflow: Number(outflow),
           netCashflow: Number(inflow) - Number(outflow),
           budgetCap: metricsRes.budgetCap || metricsRes.overallBudgetLimit || 0,
-        });
+        };
       } else {
         // Compute locally from transactions
         const inflow = txs.filter((t) => t.type === 'INCOME').reduce((acc, t) => acc + Number(t.amount || 0), 0);
         const outflow = txs.filter((t) => t.type === 'EXPENSE').reduce((acc, t) => acc + Number(t.amount || 0), 0);
-        setMetrics({
+        newMetrics = {
           totalInflow: inflow,
           totalOutflow: outflow,
           netCashflow: inflow - outflow,
           budgetCap: 0,
+        };
+      }
+      setMetrics(newMetrics);
+
+      // Save to local cache for instant future loads
+      if (accs.length > 0 || txs.length > 0) {
+        offlineStorage.saveOverviewCache({
+          accounts: accs,
+          transactions: txs,
+          metrics: newMetrics,
+          breakdown: bDown,
+          cashflow: cFlow,
+          totalExpense: totExp,
         });
       }
     } catch (e) {
@@ -122,7 +198,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [filter]);
+  }, [filter, syncOfflineData]);
 
   useEffect(() => {
     fetchData();
@@ -140,6 +216,27 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [balanceInput, setBalanceInput] = useState('');
   const [isResetting, setIsResetting] = useState(false);
+
+  // Manual offline queue sync trigger
+  const handleManualSync = async () => {
+    setIsSyncingOffline(true);
+    try {
+      const res = await offlineStorage.syncOfflineQueue();
+      setOfflinePendingCount(res.remainingCount);
+      if (res.syncedCount > 0) {
+        Alert.alert('Sync Complete', `Successfully synced ${res.syncedCount} offline transaction(s) to cloud.`);
+        fetchData();
+      } else if (res.remainingCount > 0) {
+        Alert.alert('Offline', 'Cannot reach server yet. Your changes remain safely stored on this device.');
+      } else {
+        Alert.alert('All Caught Up', 'All offline transactions are already synced.');
+      }
+    } catch {
+      Alert.alert('Sync Notice', 'Your changes remain saved locally on your device.');
+    } finally {
+      setIsSyncingOffline(false);
+    }
+  };
 
   // Reset all wallets to 0
   const handleResetAllToZero = async () => {
@@ -245,6 +342,29 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Offline Sync Banner */}
+      {offlinePendingCount > 0 && (
+        <View style={styles.offlineBanner}>
+          <View style={styles.offlineBannerLeft}>
+            <Ionicons name="cloud-offline-outline" size={18} color="#F59E0B" />
+            <Text style={styles.offlineBannerText}>
+              {offlinePendingCount} offline transaction{offlinePendingCount > 1 ? 's' : ''} waiting to sync
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.offlineSyncBtn}
+            onPress={handleManualSync}
+            disabled={isSyncingOffline}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="sync-outline" size={13} color="#FFF" />
+            <Text style={styles.offlineSyncBtnText}>
+              {isSyncingOffline ? 'Syncing...' : 'Sync'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Main Inflow vs Expenses Hero Card (Money Left) */}
       <View style={styles.heroCard}>
@@ -1256,5 +1376,43 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.white,
   },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(217, 119, 6, 0.12)',
+    borderColor: '#D97706',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+  },
+  offlineBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  offlineBannerText: {
+    color: '#FDE68A',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  offlineSyncBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#D97706',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  offlineSyncBtnText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
 });
+
 

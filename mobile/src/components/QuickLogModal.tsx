@@ -17,6 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../constants/theme';
 import { api } from '../api/client';
 import { PaymentMethod, TransactionType } from '../types';
+import { offlineStorage } from '../services/offlineStorage';
 
 interface QuickLogModalProps {
   visible: boolean;
@@ -225,15 +226,17 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({
     }
 
     setLoading(true);
+    const txData = {
+      amount: parsedAmount,
+      type,
+      category,
+      paymentMethod,
+      description: description.trim() || `${category} log`,
+      date: new Date().toISOString(),
+    };
+
     try {
-      await api.post('/api/transactions', {
-        amount: parsedAmount,
-        type,
-        category,
-        paymentMethod,
-        description: description.trim() || `${category} log`,
-        date: new Date().toISOString(),
-      });
+      await api.post('/api/transactions', txData);
 
       // Reset form
       setAmount('');
@@ -242,7 +245,39 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || 'Failed to record transaction');
+      const msg = err.message || '';
+      const isNetworkError =
+        msg.includes('Cannot reach server') ||
+        msg.includes('took too long') ||
+        msg.includes('Network request failed') ||
+        msg.includes('AbortError') ||
+        msg.includes('Failed to fetch');
+
+      if (isNetworkError) {
+        // Enqueue transaction locally for later sync
+        await offlineStorage.enqueueOfflineTransaction(txData);
+
+        // Reset form
+        setAmount('');
+        setDescription('');
+        setScanFeedback(null);
+
+        Alert.alert(
+          '⚡ Saved Offline',
+          'Your transaction was recorded locally. It will automatically sync to your cloud database when connected.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                onSuccess();
+                onClose();
+              },
+            },
+          ]
+        );
+      } else {
+        setError(msg || 'Failed to record transaction');
+      }
     } finally {
       setLoading(false);
     }

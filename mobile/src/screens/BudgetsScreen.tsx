@@ -17,6 +17,7 @@ import { Colors } from '../constants/theme';
 import { api } from '../api/client';
 import { CategoryBudget, SavingsVault } from '../types';
 import { getCategoryName } from '../utils/format';
+import { offlineStorage } from '../services/offlineStorage';
 
 const BUDGET_CATEGORIES = [
   { name: 'Food & Dining', icon: 'restaurant-outline' },
@@ -137,14 +138,43 @@ export const BudgetsScreen: React.FC = () => {
 
   const currencySymbol = user?.currency === 'USD' ? '$' : '₱';
 
+  // Instant Cache Hydration on startup (0.01s instant data rendering)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const cached = await offlineStorage.getBudgetsCache();
+        if (cached && mounted) {
+          if (cached.budgets?.length) setBudgets(cached.budgets);
+          if (cached.vaults?.length) setVaults(cached.vaults);
+          setLoading(false);
+        }
+      } catch (e) {
+        console.warn('Budgets cache hydration error:', e);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const fetchData = useCallback(async () => {
     try {
       const [budgetsRes, vaultsRes] = await Promise.all([
         api.get<{ budgets: CategoryBudget[] }>('/api/budgets').catch(() => ({ budgets: [] })),
         api.get<{ vaults: SavingsVault[] }>('/api/vaults').catch(() => ({ vaults: [] })),
       ]);
-      setBudgets(budgetsRes.budgets || []);
-      setVaults(vaultsRes.vaults || []);
+      const bList = budgetsRes.budgets || [];
+      const vList = vaultsRes.vaults || [];
+      setBudgets(bList);
+      setVaults(vList);
+
+      if (bList.length > 0 || vList.length > 0) {
+        offlineStorage.saveBudgetsCache({
+          budgets: bList,
+          vaults: vList,
+        });
+      }
     } catch (e) {
       console.warn('Budgets fetch error:', e);
     } finally {

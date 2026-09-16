@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../api/client';
 import { User } from '../types';
+import { offlineStorage } from '../services/offlineStorage';
 
 interface AuthContextType {
   user: User | null;
@@ -96,6 +97,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     await AsyncStorage.removeItem('wealthsync_token');
     await AsyncStorage.removeItem('wealthsync_user');
+    await offlineStorage.clearAll();
   };
 
   const refreshUser = async () => {

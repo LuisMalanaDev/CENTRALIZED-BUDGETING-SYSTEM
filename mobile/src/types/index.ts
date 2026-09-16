@@ -31,6 +31,7 @@ export interface Transaction {
   isShopeeOrder?: boolean;
   tags?: string[];
   orderTrackingNumber?: string;
+  isOfflinePending?: boolean;
 }
 
 export interface Account {
