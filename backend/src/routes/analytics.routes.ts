@@ -3,6 +3,7 @@ import { AnalyticsService } from '../services/analytics.service.js';
 import { authenticate } from '../plugins/auth.js';
 import { prisma } from '../prisma.js';
 import { parseDateBounds } from '../utils/dateHelper.js';
+import { renderStatementHtml } from '../utils/statementTemplate.js';
 
 export async function analyticsRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticate);
@@ -110,6 +111,88 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
       .header('Content-Type', 'text/csv; charset=utf-8')
       .header('Content-Disposition', `attachment; filename="WealthSync_${cleanLabel}.csv"`)
       .send(csvContent);
+  });
+
+  // Export Executive Visual Statement (HTML / Print to PDF)
+  fastify.get('/export-statement', async (request, reply) => {
+    const query = request.query as any;
+    const { startDate, endDate } = parseDateBounds(query.startDate, query.endDate, query.timezone || query.tz);
+    const label = query.label || 'Active Period';
+
+    const [user, transactions] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: request.user.userId },
+        select: { name: true, email: true, currency: true },
+      }),
+      prisma.transaction.findMany({
+        where: {
+          userId: request.user.userId,
+          ...(startDate || endDate
+            ? {
+                date: {
+                  ...(startDate && { gte: startDate }),
+                  ...(endDate && { lte: endDate }),
+                },
+              }
+            : {}),
+        },
+        include: { category: true, account: true },
+        orderBy: { date: 'desc' },
+      }),
+    ]);
+
+    let inflow = 0;
+    let outflow = 0;
+    const catMap = new Map<string, number>();
+
+    const txRows = transactions.map((t) => {
+      const amt = Number(t.amount || 0);
+      const isIncome = t.type === 'INCOME';
+      if (isIncome) {
+        inflow += amt;
+      } else {
+        outflow += amt;
+        const cName = t.category?.name || 'Uncategorized';
+        catMap.set(cName, (catMap.get(cName) || 0) + amt);
+      }
+
+      return {
+        date: t.date ? t.date.toISOString().split('T')[0] : '',
+        type: t.type,
+        category: t.category?.name || 'Expense',
+        description: t.description || '',
+        amount: amt,
+        paymentMethod: t.paymentMethod || 'CASH',
+        account: t.account?.name || '',
+      };
+    });
+
+    const net = inflow - outflow;
+    const savingsRate = inflow > 0 ? Math.max(0, Math.round((net / inflow) * 100)) : 0;
+
+    const categories = Array.from(catMap.entries())
+      .map(([name, amount]) => ({
+        name,
+        amount: Math.round(amount * 100) / 100,
+        percentage: outflow > 0 ? Math.round((amount / outflow) * 100) : 0,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    const html = renderStatementHtml({
+      accountHolder: user?.name || user?.email || 'WealthSync User',
+      email: user?.email || '',
+      currency: user?.currency || 'PHP',
+      periodLabel: label,
+      issuedDate: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+      inflow: Math.round(inflow * 100) / 100,
+      outflow: Math.round(outflow * 100) / 100,
+      net: Math.round(net * 100) / 100,
+      savingsRate,
+      categories,
+      transactions: txRows,
+    });
+
+    reply.header('Content-Type', 'text/html; charset=utf-8').send(html);
   });
 }
 

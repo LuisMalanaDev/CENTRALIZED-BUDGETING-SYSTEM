@@ -40,6 +40,24 @@ export const StatementModal: React.FC<StatementModalProps> = ({
   const [downloading, setDownloading] = useState(false);
   const currencySymbol = user?.currency === 'USD' ? '$' : '₱';
 
+  const handleOpenVisualStatement = async () => {
+    setDownloading(true);
+    try {
+      const baseUrl = await api.getBaseUrl();
+      const token = await AsyncStorage.getItem('wealthsync_token');
+      const start = filter.startDate || '';
+      const end = filter.endDate || '';
+      const label = filter.label || 'Statement';
+      const url = `${baseUrl}/api/analytics/export-statement?token=${encodeURIComponent(token || '')}&startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}&label=${encodeURIComponent(label)}&tz=Asia/Manila`;
+
+      await Linking.openURL(url);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Could not open visual statement.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const handleDownloadCsv = async () => {
     setDownloading(true);
     try {
@@ -125,18 +143,30 @@ export const StatementModal: React.FC<StatementModalProps> = ({
               </View>
             </View>
 
-            {/* Download CSV File Button */}
-            <TouchableOpacity
-              style={styles.exportPrimaryBtn}
-              onPress={handleDownloadCsv}
-              activeOpacity={0.8}
-              disabled={downloading}
-            >
-              <Ionicons name="download-outline" size={18} color={Colors.black} />
-              <Text style={styles.exportPrimaryBtnText}>
-                {downloading ? 'Downloading...' : `Download Statement (.CSV)`}
-              </Text>
-            </TouchableOpacity>
+            {/* Download Buttons: Visual Statement & CSV */}
+            <View style={styles.downloadButtonsRow}>
+              <TouchableOpacity
+                style={styles.exportVisualBtn}
+                onPress={handleOpenVisualStatement}
+                activeOpacity={0.8}
+                disabled={downloading}
+              >
+                <Ionicons name="document-text" size={17} color={Colors.black} />
+                <Text style={styles.exportVisualBtnText}>
+                  {downloading ? 'Loading...' : 'Executive Statement (PDF)'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.exportCsvBtn}
+                onPress={handleDownloadCsv}
+                activeOpacity={0.8}
+                disabled={downloading}
+              >
+                <Ionicons name="download-outline" size={16} color={Colors.white} />
+                <Text style={styles.exportCsvBtnText}>Download Spreadsheet (.CSV)</Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Itemized Transactions Table */}
             <View style={styles.tableHeaderRow}>
@@ -292,7 +322,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 3,
   },
-  exportPrimaryBtn: {
+  downloadButtonsRow: {
+    gap: 10,
+  },
+  exportVisualBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -301,10 +334,26 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 14,
   },
-  exportPrimaryBtnText: {
+  exportVisualBtnText: {
     color: Colors.black,
     fontSize: 14,
     fontWeight: '700',
+  },
+  exportCsvBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.surfaceCard,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 14,
+    paddingVertical: 12,
+  },
+  exportCsvBtnText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontWeight: '600',
   },
   tableHeaderRow: {
     flexDirection: 'row',
