@@ -19,6 +19,18 @@ import { DateRangeFilter, Transaction } from '../types';
 import { getCategoryName } from '../utils/format';
 import { offlineStorage } from '../services/offlineStorage';
 
+const CATEGORY_OPTIONS = [
+  { id: 'ALL', label: 'All', icon: 'apps-outline' },
+  { id: 'Transportation', label: 'Transpo', icon: 'car-outline' },
+  { id: 'Food & Dining', label: 'Food & Dining', icon: 'restaurant-outline' },
+  { id: 'Groceries', label: 'Groceries', icon: 'basket-outline' },
+  { id: 'Bills & Utilities', label: 'Bills', icon: 'receipt-outline' },
+  { id: 'Shopping', label: 'Shopping', icon: 'cart-outline' },
+  { id: 'Entertainment', label: 'Entertainment', icon: 'game-controller-outline' },
+  { id: 'Personal Care', label: 'Personal', icon: 'heart-outline' },
+  { id: 'Other Expense', label: 'Other', icon: 'ellipsis-horizontal-outline' },
+];
+
 interface LedgerScreenProps {
   filter: DateRangeFilter;
   onFilterChange: (filter: DateRangeFilter) => void;
@@ -35,6 +47,7 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [search, setSearch] = useState('');
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
@@ -155,7 +168,7 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
 
   useEffect(() => {
     setPage(1);
-  }, [search, typeFilter, filter]);
+  }, [search, typeFilter, filter, selectedCategory]);
 
   const filteredTransactions = transactions.filter((tx) => {
     // 1. Exclude online orders and email-synced receipts (these belong exclusively in Tracker)
@@ -175,7 +188,23 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
     // 2. Type filter (+Log Inflow vs Expense)
     if (typeFilter !== 'ALL' && tx.type !== typeFilter) return false;
 
-    // 3. Search query
+    // 3. Category filter (Transportation, Food, Groceries, etc.)
+    if (selectedCategory !== 'ALL') {
+      const catName = getCategoryName(tx.category, '').toLowerCase();
+      const target = selectedCategory.toLowerCase();
+
+      const isMatch =
+        catName.includes(target) ||
+        (target.includes('transpo') && (catName.includes('transpo') || catName.includes('commute') || catName.includes('gas'))) ||
+        (target.includes('food') && (catName.includes('food') || catName.includes('dining') || catName.includes('restaurant'))) ||
+        (target.includes('grocer') && (catName.includes('grocer') || catName.includes('supermarket'))) ||
+        (target.includes('bill') && (catName.includes('bill') || catName.includes('utility'))) ||
+        (target.includes('shop') && (catName.includes('shop') || catName.includes('retail')));
+
+      if (!isMatch) return false;
+    }
+
+    // 4. Search query
     if (search.trim()) {
       const q = search.toLowerCase();
       const matchCat = getCategoryName(tx.category, '').toLowerCase().includes(q);
@@ -219,6 +248,44 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
 
       {/* Date Filter Bar */}
       <DateFilterBar filter={filter} onFilterChange={onFilterChange} />
+
+      {/* Category Filter Horizontal Scroll */}
+      <View style={styles.categoryFilterWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryScroll}
+        >
+          {CATEGORY_OPTIONS.map((cat) => {
+            const isSelected = selectedCategory === cat.id;
+            return (
+              <TouchableOpacity
+                key={cat.id}
+                style={[
+                  styles.categoryPill,
+                  isSelected && styles.categoryPillActive,
+                ]}
+                onPress={() => setSelectedCategory(cat.id)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={cat.icon as any}
+                  size={12}
+                  color={isSelected ? Colors.black : Colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.categoryPillText,
+                    isSelected && styles.categoryPillTextActive,
+                  ]}
+                >
+                  {cat.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {/* Search Bar */}
       <View style={styles.searchBox}>
@@ -811,5 +878,36 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
+  },
+  categoryFilterWrapper: {
+    marginBottom: 12,
+  },
+  categoryScroll: {
+    gap: 8,
+    paddingRight: 10,
+  },
+  categoryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  categoryPillActive: {
+    backgroundColor: Colors.white,
+    borderColor: Colors.white,
+  },
+  categoryPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  categoryPillTextActive: {
+    color: Colors.black,
+    fontWeight: '700',
   },
 });

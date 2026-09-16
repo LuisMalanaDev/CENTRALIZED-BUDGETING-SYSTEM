@@ -104,6 +104,17 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
     fetchOrders();
   };
 
+  // Platform / Store Filter State
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('ALL');
+
+  const PLATFORM_PRESETS = [
+    { id: 'ALL', label: 'All Stores', icon: 'apps-outline' },
+    { id: 'SHOPEE', label: 'Shopee', icon: 'bag-handle-outline', color: '#EE4D2D' },
+    { id: 'GOOGLE_PLAY', label: 'Google Play', icon: 'logo-google-playstore', color: '#01875F' },
+    { id: 'LAZADA', label: 'Lazada', icon: 'cart-outline', color: '#3B82F6' },
+    { id: 'OTHER', label: 'Other', icon: 'cube-outline', color: Colors.textMuted },
+  ];
+
   // Price Range Filter State
   const [selectedPriceId, setSelectedPriceId] = useState<string>('ALL');
   const [customModalVisible, setCustomModalVisible] = useState(false);
@@ -154,6 +165,27 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
   }
 
   const filteredOrders = orders.filter((o) => {
+    // 1. Platform / Store Filter (Shopee, Google Play, Lazada, etc.)
+    if (selectedPlatform !== 'ALL') {
+      const plat = (o.platform || '').toUpperCase();
+      const merch = (o.merchant || '').toUpperCase();
+      const src = (o.source || '').toUpperCase();
+      const notes = (o.notes || '').toUpperCase();
+      const items = (o.items || '').toUpperCase();
+      const combined = `${plat} ${merch} ${src} ${notes} ${items}`;
+
+      if (selectedPlatform === 'SHOPEE') {
+        if (!combined.includes('SHOPEE')) return false;
+      } else if (selectedPlatform === 'GOOGLE_PLAY') {
+        if (!combined.includes('GOOGLE') && !combined.includes('PLAY')) return false;
+      } else if (selectedPlatform === 'LAZADA') {
+        if (!combined.includes('LAZADA')) return false;
+      } else if (selectedPlatform === 'OTHER') {
+        if (combined.includes('SHOPEE') || combined.includes('GOOGLE') || combined.includes('PLAY') || combined.includes('LAZADA')) return false;
+      }
+    }
+
+    // 2. Price Range Filter
     const amt = Number(o.amount) || 0;
     if (selectedPriceId === 'ALL') return true;
     if (selectedPriceId === 'UNDER_100') return amt < 100;
@@ -173,7 +205,7 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
 
   useEffect(() => {
     setPage(1);
-  }, [filter, selectedPriceId, appliedMin, appliedMax]);
+  }, [filter, selectedPlatform, selectedPriceId, appliedMin, appliedMax]);
 
   const totalSpent = filteredOrders.reduce((acc, o) => acc + (o.amount || 0), 0);
   const inTransitCount = filteredOrders.filter((o) => o.status === 'IN_TRANSIT' || o.status === 'TO_SHIP').length;
@@ -235,6 +267,56 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
 
       {/* Date Filter Bar */}
       <DateFilterBar filter={filter} onFilterChange={onFilterChange} />
+
+      {/* Store / Platform Filter Pills */}
+      <View style={styles.platformFilterContainer}>
+        <View style={styles.priceFilterHeader}>
+          <View style={styles.priceFilterLabelRow}>
+            <Ionicons name="storefront-outline" size={11} color={Colors.textMuted} />
+            <Text style={styles.priceFilterLabel}>STORE / PLATFORM</Text>
+          </View>
+          {selectedPlatform !== 'ALL' && (
+            <TouchableOpacity onPress={() => setSelectedPlatform('ALL')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.priceResetBtn}>Reset</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.platformScroll}
+        >
+          {PLATFORM_PRESETS.map((p) => {
+            const isSelected = selectedPlatform === p.id;
+            return (
+              <TouchableOpacity
+                key={p.id}
+                style={[
+                  styles.platformPill,
+                  isSelected && styles.platformPillActive,
+                ]}
+                onPress={() => setSelectedPlatform(p.id)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={p.icon as any}
+                  size={12}
+                  color={isSelected ? Colors.black : p.color || Colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.platformPillText,
+                    isSelected && styles.platformPillTextActive,
+                  ]}
+                >
+                  {p.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {/* Price Range Filter Pills */}
       <View style={styles.priceFilterContainer}>
@@ -953,6 +1035,38 @@ const styles = StyleSheet.create({
   modalDoneBtnText: {
     color: Colors.black,
     fontSize: 14,
+    fontWeight: '700',
+  },
+  platformFilterContainer: {
+    marginBottom: 12,
+    gap: 8,
+  },
+  platformScroll: {
+    gap: 8,
+    paddingRight: 10,
+  },
+  platformPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  platformPillActive: {
+    backgroundColor: Colors.white,
+    borderColor: Colors.white,
+  },
+  platformPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  platformPillTextActive: {
+    color: Colors.black,
     fontWeight: '700',
   },
   priceFilterContainer: {
