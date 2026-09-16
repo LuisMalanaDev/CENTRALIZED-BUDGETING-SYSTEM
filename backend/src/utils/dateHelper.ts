@@ -6,28 +6,49 @@
 export function parseDateBounds(
   startDateStr?: string,
   endDateStr?: string,
-  timezoneOffset: string = '+08:00'
+  timezoneOffset?: string
 ): { startDate?: Date; endDate?: Date } {
   let startDate: Date | undefined;
   let endDate: Date | undefined;
 
-  const tz = timezoneOffset.startsWith('+') || timezoneOffset.startsWith('-')
-    ? timezoneOffset
-    : `+${timezoneOffset.padStart(2, '0')}:00`;
-
-  if (startDateStr) {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(startDateStr)) {
-      startDate = new Date(`${startDateStr}T00:00:00.000${tz}`);
-    } else {
-      startDate = new Date(startDateStr);
+  let tz = '+08:00'; // Default to Philippine Standard Time
+  if (timezoneOffset) {
+    if (timezoneOffset.startsWith('+') || timezoneOffset.startsWith('-')) {
+      tz = timezoneOffset.includes(':') ? timezoneOffset : `${timezoneOffset}:00`;
+    } else if (
+      timezoneOffset === 'Asia/Manila' ||
+      timezoneOffset.includes('Manila') ||
+      timezoneOffset.includes('PH')
+    ) {
+      tz = '+08:00';
+    } else if (/^\d+$/.test(timezoneOffset)) {
+      tz = `+${timezoneOffset.padStart(2, '0')}:00`;
     }
   }
 
-  if (endDateStr) {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(endDateStr)) {
-      endDate = new Date(`${endDateStr}T23:59:59.999${tz}`);
+  if (startDateStr && startDateStr.trim() !== '') {
+    const s = startDateStr.trim();
+    let d: Date;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      d = new Date(`${s}T00:00:00.000${tz}`);
     } else {
-      endDate = new Date(endDateStr);
+      d = new Date(s);
+    }
+    if (!isNaN(d.getTime())) {
+      startDate = d;
+    }
+  }
+
+  if (endDateStr && endDateStr.trim() !== '') {
+    const e = endDateStr.trim();
+    let d: Date;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(e)) {
+      d = new Date(`${e}T23:59:59.999${tz}`);
+    } else {
+      d = new Date(e);
+    }
+    if (!isNaN(d.getTime())) {
+      endDate = d;
     }
   }
 
