@@ -3,6 +3,8 @@ packages:
   - 'frontend'
   - 'mobile'
 
+minimumReleaseAge: 0
+
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
@@ -10,3 +12,4 @@ allowBuilds:
   prisma: true
 
 strictDepBuilds: false
+
