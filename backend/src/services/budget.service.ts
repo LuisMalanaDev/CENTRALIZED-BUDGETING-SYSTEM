@@ -177,16 +177,23 @@ export class BudgetService {
     period?: BudgetPeriod;
   }) {
     return dbSafe(
-      () => prisma.budget.update({
-        where: { id: budgetId, userId },
-        data: {
-          ...(data.name && { name: data.name }),
-          ...(data.amount !== undefined && { amount: new Prisma.Decimal(data.amount) }),
-          ...(data.categoryId !== undefined && { categoryId: data.categoryId }),
-          ...(data.period && { period: data.period }),
-        },
-        include: { category: true },
-      }),
+      async () => {
+        const budget = await prisma.budget.findFirst({
+          where: { id: budgetId, userId },
+        });
+        if (!budget) throw new Error('Budget not found or unauthorized');
+
+        return prisma.budget.update({
+          where: { id: budgetId },
+          data: {
+            ...(data.name && { name: data.name }),
+            ...(data.amount !== undefined && { amount: new Prisma.Decimal(data.amount) }),
+            ...(data.categoryId !== undefined && { categoryId: data.categoryId }),
+            ...(data.period && { period: data.period }),
+          },
+          include: { category: true },
+        });
+      },
       () => {
         const b = mockStore.budgets.find((item) => item.id === budgetId);
         if (!b) throw new Error('Budget not found');
@@ -200,9 +207,16 @@ export class BudgetService {
 
   static async deleteBudget(userId: string, budgetId: string) {
     return dbSafe(
-      () => prisma.budget.delete({
-        where: { id: budgetId, userId },
-      }),
+      async () => {
+        const budget = await prisma.budget.findFirst({
+          where: { id: budgetId, userId },
+        });
+        if (!budget) throw new Error('Budget not found or unauthorized');
+
+        return prisma.budget.delete({
+          where: { id: budgetId },
+        });
+      },
       () => {
         const idx = mockStore.budgets.findIndex((b) => b.id === budgetId);
         if (idx !== -1) mockStore.budgets.splice(idx, 1);

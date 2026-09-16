@@ -61,16 +61,23 @@ export class AccountService {
     icon?: string;
   }) {
     return dbSafe(
-      () => prisma.account.update({
-        where: { id: accountId, userId },
-        data: {
-          ...(data.name && { name: data.name }),
-          ...(data.type && { type: data.type }),
-          ...(data.balance !== undefined && { balance: data.balance }),
-          ...(data.color && { color: data.color }),
-          ...(data.icon && { icon: data.icon }),
-        },
-      }),
+      async () => {
+        const acc = await prisma.account.findFirst({
+          where: { id: accountId, userId },
+        });
+        if (!acc) throw new Error('Account not found or unauthorized');
+
+        return prisma.account.update({
+          where: { id: accountId },
+          data: {
+            ...(data.name && { name: data.name }),
+            ...(data.type && { type: data.type }),
+            ...(data.balance !== undefined && { balance: data.balance }),
+            ...(data.color && { color: data.color }),
+            ...(data.icon && { icon: data.icon }),
+          },
+        });
+      },
       () => {
         const acc = mockStore.accounts.find((a) => a.id === accountId);
         if (!acc) throw new Error('Account not found');
@@ -86,9 +93,16 @@ export class AccountService {
 
   static async deleteAccount(userId: string, accountId: string) {
     return dbSafe(
-      () => prisma.account.delete({
-        where: { id: accountId, userId },
-      }),
+      async () => {
+        const acc = await prisma.account.findFirst({
+          where: { id: accountId, userId },
+        });
+        if (!acc) throw new Error('Account not found or unauthorized');
+
+        return prisma.account.delete({
+          where: { id: accountId },
+        });
+      },
       () => {
         const idx = mockStore.accounts.findIndex((a) => a.id === accountId);
         if (idx !== -1) mockStore.accounts.splice(idx, 1);

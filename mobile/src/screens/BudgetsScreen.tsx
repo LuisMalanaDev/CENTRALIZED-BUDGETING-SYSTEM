@@ -109,6 +109,7 @@ export const BudgetsScreen: React.FC = () => {
   const [vaults, setVaults] = useState<SavingsVault[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
   const [budgetPage, setBudgetPage] = useState(1);
   const [vaultPage, setVaultPage] = useState(1);
   const PAGE_SIZE = 6;
@@ -169,6 +170,7 @@ export const BudgetsScreen: React.FC = () => {
       const vList = vaultsRes.vaults || [];
       setBudgets(bList);
       setVaults(vList);
+      setIsOffline(false);
 
       if (bList.length > 0 || vList.length > 0) {
         offlineStorage.saveBudgetsCache({
@@ -178,6 +180,7 @@ export const BudgetsScreen: React.FC = () => {
       }
     } catch (e: any) {
       console.warn('Budgets fetch error (offline):', e?.message || e);
+      setIsOffline(true);
       // DEVICE IS OFFLINE: Restore and retain cached budgets & vaults!
       try {
         const cached = await offlineStorage.getBudgetsCache();
@@ -331,6 +334,16 @@ export const BudgetsScreen: React.FC = () => {
     >
       {/* Title */}
       <Text style={styles.title}>Budgets & Vaults</Text>
+
+      {/* Offline Cache Indicator */}
+      {isOffline && (
+        <View style={styles.offlineBanner}>
+          <Ionicons name="cloud-offline-outline" size={14} color="#F59E0B" />
+          <Text style={styles.offlineBannerText}>
+            Viewing cached budgets & vaults (Offline mode)
+          </Text>
+        </View>
+      )}
 
       {/* Segmented Tab Bar */}
       <View style={styles.tabsRow}>
@@ -1441,5 +1454,22 @@ const styles = StyleSheet.create({
   colorPickerBtnSelected: {
     borderWidth: 3,
     borderColor: Colors.white,
+  },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#1E1B16',
+    borderWidth: 1,
+    borderColor: '#78350F',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
+  },
+  offlineBannerText: {
+    color: '#FCD34D',
+    fontSize: 12,
+    fontWeight: '500',
   },
 });

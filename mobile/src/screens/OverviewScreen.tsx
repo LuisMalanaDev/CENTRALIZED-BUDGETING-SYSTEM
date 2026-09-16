@@ -196,6 +196,21 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
         if (txs.length > 0) {
           offlineStorage.saveLedgerCache(txs);
         }
+
+        // Silently pre-cache budgets and vaults in background so Budgets tab works offline immediately
+        Promise.all([
+          api.get<{ budgets: any[] }>('/api/budgets').catch(() => null),
+          api.get<{ vaults: any[] }>('/api/vaults').catch(() => null),
+        ]).then(([bRes, vRes]) => {
+          const bList = bRes?.budgets || [];
+          const vList = vRes?.vaults || [];
+          if (bList.length > 0 || vList.length > 0) {
+            offlineStorage.saveBudgetsCache({
+              budgets: bList,
+              vaults: vList,
+            });
+          }
+        }).catch(() => {});
       }
     } catch (e: any) {
       console.warn('Overview fetch error (offline or server unreachable):', e?.message || e);

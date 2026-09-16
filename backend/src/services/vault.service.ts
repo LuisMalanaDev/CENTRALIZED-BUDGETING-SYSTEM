@@ -113,18 +113,25 @@ export class VaultService {
     isLocked?: boolean;
   }) {
     return dbSafe(
-      () => prisma.savingsGoal.update({
-        where: { id: goalId, userId },
-        data: {
-          ...(data.name && { name: data.name }),
-          ...(data.targetAmount !== undefined && { targetAmount: new Prisma.Decimal(data.targetAmount) }),
-          ...(data.currentAmount !== undefined && { currentAmount: new Prisma.Decimal(data.currentAmount) }),
-          ...(data.targetDate !== undefined && { targetDate: data.targetDate ? new Date(data.targetDate) : null }),
-          ...(data.color && { color: data.color }),
-          ...(data.icon && { icon: data.icon }),
-          ...(data.isLocked !== undefined && { isLocked: data.isLocked }),
-        },
-      }),
+      async () => {
+        const goal = await prisma.savingsGoal.findFirst({
+          where: { id: goalId, userId },
+        });
+        if (!goal) throw new Error('Savings Goal not found or unauthorized');
+
+        return prisma.savingsGoal.update({
+          where: { id: goalId },
+          data: {
+            ...(data.name && { name: data.name }),
+            ...(data.targetAmount !== undefined && { targetAmount: new Prisma.Decimal(data.targetAmount) }),
+            ...(data.currentAmount !== undefined && { currentAmount: new Prisma.Decimal(data.currentAmount) }),
+            ...(data.targetDate !== undefined && { targetDate: data.targetDate ? new Date(data.targetDate) : null }),
+            ...(data.color && { color: data.color }),
+            ...(data.icon && { icon: data.icon }),
+            ...(data.isLocked !== undefined && { isLocked: data.isLocked }),
+          },
+        });
+      },
       () => {
         const goal = mockStore.savingsGoals.find((g) => g.id === goalId);
         if (!goal) throw new Error('Savings Goal not found');
@@ -143,7 +150,7 @@ export class VaultService {
   }) {
     return dbSafe(
       () => prisma.$transaction(async (tx) => {
-        const goal = await tx.savingsGoal.findUnique({
+        const goal = await tx.savingsGoal.findFirst({
           where: { id: goalId, userId },
         });
 
@@ -166,7 +173,7 @@ export class VaultService {
 
         if (input.accountId) {
           await tx.account.update({
-            where: { id: input.accountId, userId },
+            where: { id: input.accountId },
             data: {
               balance: isDeposit
                 ? { decrement: diff }
@@ -202,9 +209,16 @@ export class VaultService {
 
   static async deleteGoal(userId: string, goalId: string) {
     return dbSafe(
-      () => prisma.savingsGoal.delete({
-        where: { id: goalId, userId },
-      }),
+      async () => {
+        const goal = await prisma.savingsGoal.findFirst({
+          where: { id: goalId, userId },
+        });
+        if (!goal) throw new Error('Savings Goal not found or unauthorized');
+
+        return prisma.savingsGoal.delete({
+          where: { id: goalId },
+        });
+      },
       () => {
         const idx = mockStore.savingsGoals.findIndex((g) => g.id === goalId);
         if (idx !== -1) mockStore.savingsGoals.splice(idx, 1);

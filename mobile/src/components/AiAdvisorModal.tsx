@@ -19,10 +19,28 @@ interface AiInsightItem {
   icon: string;
 }
 
+interface CategoryWarning {
+  category: string;
+  amount: number;
+  percentage: number;
+  status: 'danger' | 'warning' | 'info';
+  message: string;
+  tip: string;
+}
+
+interface AiPacing {
+  safeDailySpend: number;
+  daysRemaining: number;
+  status: 'comfortable' | 'tight' | 'critical';
+  message: string;
+}
+
 interface AiReport {
   mode: 'coach' | 'roast';
   score: number;
   headline: string;
+  pacing?: AiPacing;
+  categoryWarnings?: CategoryWarning[];
   insights: AiInsightItem[];
   actionItem: string;
   generatedAt: string;
@@ -162,6 +180,118 @@ export const AiAdvisorModal: React.FC<AiAdvisorModalProps> = ({
                     </View>
                   </View>
                 </View>
+
+                {/* Smooth Spending Pacer */}
+                {report.pacing && (
+                  <View
+                    style={[
+                      styles.pacerCard,
+                      report.pacing.status === 'critical'
+                        ? styles.pacerCritical
+                        : report.pacing.status === 'tight'
+                        ? styles.pacerTight
+                        : styles.pacerComfortable,
+                    ]}
+                  >
+                    <View style={styles.pacerHeader}>
+                      <View style={styles.pacerBadge}>
+                        <Ionicons
+                          name={report.pacing.status === 'critical' ? 'alert-circle' : 'time-outline'}
+                          size={13}
+                          color={
+                            report.pacing.status === 'critical'
+                              ? '#EF4444'
+                              : report.pacing.status === 'tight'
+                              ? '#F59E0B'
+                              : '#10B981'
+                          }
+                        />
+                        <Text
+                          style={[
+                            styles.pacerBadgeText,
+                            {
+                              color:
+                                report.pacing.status === 'critical'
+                                  ? '#EF4444'
+                                  : report.pacing.status === 'tight'
+                                  ? '#F59E0B'
+                                  : '#10B981',
+                            },
+                          ]}
+                        >
+                          SMOOTH SPENDING PACER
+                        </Text>
+                      </View>
+                      <Text style={styles.pacerDaysText}>
+                        {report.pacing.daysRemaining} days left in cycle
+                      </Text>
+                    </View>
+
+                    <View style={styles.pacerBody}>
+                      <Text style={styles.pacerSpendAmount}>
+                        ₱{report.pacing.safeDailySpend.toLocaleString()}
+                        <Text style={styles.pacerSpendUnit}> / day</Text>
+                      </Text>
+                      <Text style={styles.pacerSpendLabel}>Safe Daily Spending Allowance</Text>
+                    </View>
+
+                    <Text style={styles.pacerMessage}>{report.pacing.message}</Text>
+                  </View>
+                )}
+
+                {/* Category Spending Alerts */}
+                {report.categoryWarnings && report.categoryWarnings.length > 0 && (
+                  <View style={styles.warningsSection}>
+                    <Text style={styles.sectionHeader}>Category Spending Alerts</Text>
+                    <View style={styles.warningsList}>
+                      {report.categoryWarnings.map((warn, wIdx) => {
+                        const isDanger = warn.status === 'danger';
+                        return (
+                          <View
+                            key={wIdx}
+                            style={[
+                              styles.warningCard,
+                              isDanger ? styles.warningCardDanger : styles.warningCardWarning,
+                            ]}
+                          >
+                            <View style={styles.warningCardHeader}>
+                              <View style={styles.warningTitleRow}>
+                                <Ionicons
+                                  name={isDanger ? 'alert-circle' : 'warning-outline'}
+                                  size={16}
+                                  color={isDanger ? '#EF4444' : '#F59E0B'}
+                                />
+                                <Text style={styles.warningCategoryText}>{warn.category}</Text>
+                              </View>
+                              <View
+                                style={[
+                                  styles.warningBadge,
+                                  isDanger ? styles.warningBadgeDanger : styles.warningBadgeWarning,
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.warningBadgeText,
+                                    { color: isDanger ? '#EF4444' : '#F59E0B' },
+                                  ]}
+                                >
+                                  {warn.percentage}% OF EXPENSES
+                                </Text>
+                              </View>
+                            </View>
+
+                            <Text style={styles.warningMessage}>{warn.message}</Text>
+
+                            <View style={styles.warningTipBox}>
+                              <Ionicons name="bulb-outline" size={13} color="#94A3B8" />
+                              <Text style={styles.warningTipText}>{warn.tip}</Text>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
 
                 {/* Key Insights List */}
                 <Text style={styles.sectionHeader}>Key Financial Insights</Text>
@@ -371,6 +501,143 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontStyle: 'italic',
   },
+  // Smooth Spending Pacer
+  pacerCard: {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    gap: 12,
+  },
+  pacerComfortable: {
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  pacerTight: {
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+  },
+  pacerCritical: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  pacerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  pacerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pacerBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  pacerDaysText: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontWeight: '500',
+  },
+  pacerBody: {
+    gap: 2,
+  },
+  pacerSpendAmount: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: Colors.white,
+  },
+  pacerSpendUnit: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.textSecondary,
+  },
+  pacerSpendLabel: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontWeight: '500',
+  },
+  pacerMessage: {
+    fontSize: 13,
+    color: Colors.white,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+
+  // Category Warnings
+  warningsSection: {
+    gap: 10,
+  },
+  warningsList: {
+    gap: 10,
+  },
+  warningCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 8,
+  },
+  warningCardWarning: {
+    backgroundColor: 'rgba(245, 158, 11, 0.06)',
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+  },
+  warningCardDanger: {
+    backgroundColor: 'rgba(239, 68, 68, 0.06)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  warningCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  warningTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  warningCategoryText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  warningBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  warningBadgeWarning: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+  },
+  warningBadgeDanger: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+  },
+  warningBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  warningMessage: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 17,
+  },
+  warningTipBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.surfaceSubtle,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  warningTipText: {
+    fontSize: 11,
+    color: '#CBD5E1',
+    flex: 1,
+    lineHeight: 16,
+  },
+
   sectionHeader: {
     fontSize: 13,
     fontWeight: '700',

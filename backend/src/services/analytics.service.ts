@@ -482,62 +482,202 @@ export class AnalyticsService {
     const inflow = summary?.totalInflow ?? summary?.monthlyIncome ?? 0;
     const outflow = summary?.totalOutflow ?? summary?.totalExpenses ?? 0;
     const netCashflow = summary?.netCashflow ?? (inflow - outflow);
-    const categories = (breakdownData?.breakdown || []).slice(0, 5);
+    const categories: Array<{ name: string; amount: number; percentage: number; color?: string }> =
+      (breakdownData?.breakdown || []).slice(0, 8);
+
+    // Compute days remaining in current month for spending pacing
+    const now = new Date();
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const daysRemaining = Math.max(1, Math.ceil((endOfMonth.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+    const safeDailySpend = netCashflow > 0 ? Math.round(netCashflow / daysRemaining) : 0;
 
     // Fetch savings goals
-    let goals: Array<{ name: string; current: number; target: number; pct: number }> = [];
-    try {
-      const dbGoals = await prisma.savingsGoal.findMany({
-        where: { userId },
-        select: { name: true, currentAmount: true, targetAmount: true },
-      });
-      goals = dbGoals.map((g) => {
-        const c = Number(g.currentAmount);
-        const t = Number(g.targetAmount);
-        return {
+    const goals = await dbSafe(
+      async () => {
+        const dbGoals = await prisma.savingsGoal.findMany({
+          where: { userId },
+          select: { name: true, currentAmount: true, targetAmount: true },
+        });
+        return dbGoals.map((g) => {
+          const c = Number(g.currentAmount);
+          const t = Number(g.targetAmount);
+          return {
+            name: g.name,
+            current: c,
+            target: t,
+            pct: t > 0 ? Math.round((c / t) * 100) : 0,
+          };
+        });
+      },
+      () => {
+        const mg = mockStore.savingsGoals.filter((g) => g.userId === userId);
+        return mg.map((g) => ({
           name: g.name,
-          current: c,
-          target: t,
-          pct: t > 0 ? Math.round((c / t) * 100) : 0,
-        };
-      });
-    } catch {
-      const mg = mockStore.savingsGoals.filter((g) => g.userId === userId);
-      goals = mg.map((g) => ({
-        name: g.name,
-        current: g.currentAmount,
-        target: g.targetAmount,
-        pct: g.targetAmount > 0 ? Math.round((g.currentAmount / g.targetAmount) * 100) : 0,
-      }));
-    }
+          current: g.currentAmount,
+          target: g.targetAmount,
+          pct: g.targetAmount > 0 ? Math.round((g.currentAmount / g.targetAmount) * 100) : 0,
+        }));
+      }
+    );
+
+    // Fetch active budgets
+    const budgets = await dbSafe(
+      async () => {
+        const dbBudgets = await prisma.budget.findMany({
+          where: { userId },
+          include: { category: true },
+        });
+        return dbBudgets.map((b) => {
+          const limit = Number(b.amount);
+          const match = categories.find((c) => c.name.toLowerCase() === b.category?.name?.toLowerCase());
+          const spent = match ? match.amount : 0;
+          return {
+            category: b.category?.name || b.name,
+            limit,
+            spent,
+            pct: limit > 0 ? Math.round((spent / limit) * 100) : 0,
+          };
+        });
+      },
+      () => {
+        const mb = mockStore.budgets.filter((b) => b.userId === userId);
+        return mb.map((b) => ({
+          category: b.name,
+          limit: b.amount,
+          spent: 0,
+          pct: 0,
+        }));
+      }
+    );
 
     // Compute basic savings rate
     const savingsRate = inflow > 0 ? Math.max(0, Math.round((netCashflow / inflow) * 100)) : 0;
+
+    // Detect Category Burn Warnings (e.g. Transportation, Food & Dining, Shopee/Online)
+    const categoryWarnings: Array<{
+      category: string;
+      amount: number;
+      percentage: number;
+      status: 'danger' | 'warning' | 'info';
+      message: string;
+      tip: string;
+    }> = [];
+
+    for (const cat of categories) {
+      const lower = cat.name.toLowerCase();
+      if (lower.includes('transpo') || lower.includes('transportation') || lower.includes('gas') || lower.includes('commute')) {
+        if (cat.percentage >= 15 || cat.amount >= 2500) {
+          categoryWarnings.push({
+            category: cat.name,
+            amount: cat.amount,
+            percentage: cat.percentage,
+            status: cat.percentage >= 25 ? 'danger' : 'warning',
+            message: `Transportation takes ${cat.percentage}% of your expenses (₱${cat.amount.toLocaleString()}).`,
+            tip: `Combine errands into single trips or use train/bus for non-urgent commutes to keep ~₱500 in your pocket.`,
+          });
+        }
+      } else if (lower.includes('food') || lower.includes('dining') || lower.includes('restaurant') || lower.includes('delivery')) {
+        if (cat.percentage >= 28 || cat.amount >= 3500) {
+          categoryWarnings.push({
+            category: cat.name,
+            amount: cat.amount,
+            percentage: cat.percentage,
+            status: cat.percentage >= 40 ? 'danger' : 'warning',
+            message: `Food & Dining is consuming ${cat.percentage}% of your budget (₱${cat.amount.toLocaleString()}).`,
+            tip: `Cook meals at home 2 extra days this week and reduce delivery app orders to lower food costs.`,
+          });
+        }
+      } else if (lower.includes('shopee') || lower.includes('lazada') || lower.includes('shopping') || lower.includes('online')) {
+        if (cat.percentage >= 15 || cat.amount >= 2000) {
+          categoryWarnings.push({
+            category: cat.name,
+            amount: cat.amount,
+            percentage: cat.percentage,
+            status: cat.percentage >= 25 ? 'danger' : 'warning',
+            message: `Online shopping accounts for ${cat.percentage}% of spending (₱${cat.amount.toLocaleString()}).`,
+            tip: `Use the 48-Hour Cart Rule: leave items in your cart for 2 full days before buying to prevent impulsive checkouts.`,
+          });
+        }
+      }
+    }
+
+    // Check for any category budget nearing or exceeding limit
+    for (const b of budgets) {
+      if (b.pct >= 80 && !categoryWarnings.some((w) => w.category.toLowerCase() === b.category.toLowerCase())) {
+        categoryWarnings.push({
+          category: b.category,
+          amount: b.spent,
+          percentage: b.pct,
+          status: b.pct >= 100 ? 'danger' : 'warning',
+          message: `${b.category} budget is ${b.pct}% consumed (₱${b.spent.toLocaleString()} / ₱${b.limit.toLocaleString()}).`,
+          tip: b.pct >= 100
+            ? `Limit exceeded by ₱${(b.spent - b.limit).toLocaleString()}. Freeze spending in this category until next month.`
+            : `Only ₱${(b.limit - b.spent).toLocaleString()} remaining for the next ${daysRemaining} days.`,
+        });
+      }
+    }
+
+    // Determine Pacing Status
+    const pacingStatus: 'comfortable' | 'tight' | 'critical' =
+      netCashflow <= 0 ? 'critical' : safeDailySpend < 200 ? 'tight' : 'comfortable';
+    const pacingMessage =
+      netCashflow <= 0
+        ? `Outflow has exceeded inflow by ₱${Math.abs(netCashflow).toLocaleString()}. Freeze non-essential purchases.`
+        : safeDailySpend < 200
+        ? `Budget is tight. Limit daily discretionary spend to ₱${safeDailySpend}/day for the remaining ${daysRemaining} days.`
+        : `Smooth pacing: You can comfortably spend up to ₱${safeDailySpend}/day over the next ${daysRemaining} days.`;
 
     // 2. Try Gemini API if key is available
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
     if (apiKey) {
       const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
       const topCatStr = categories.length > 0
-        ? categories.map((c: any) => `${c.name}: ₱${c.amount} (${c.percentage}%)`).join(', ')
+        ? categories.map((c: any) => `${c.name}: ₱${c.amount.toLocaleString()} (${c.percentage}%)`).join(', ')
         : 'No specific category data logged yet';
       const goalsStr = goals.length > 0
-        ? goals.map((g) => `${g.name}: ₱${g.current}/₱${g.target} (${g.pct}%)`).join(', ')
+        ? goals.map((g) => `${g.name}: ₱${g.current.toLocaleString()}/₱${g.target.toLocaleString()} (${g.pct}%)`).join(', ')
         : 'No savings vaults active';
+      const budgetsStr = budgets.length > 0
+        ? budgets.map((b) => `${b.category}: ₱${b.spent.toLocaleString()}/₱${b.limit.toLocaleString()} (${b.pct}% used)`).join(', ')
+        : 'No category budgets configured';
 
-      const prompt = `You are WealthSync AI, an expert personal financial advisor and money strategist for users in the Philippines (using ₱ / PHP).
+      const prompt = `You are WealthSync AI, an expert personal financial advisor and cashflow pacing strategist for users in the Philippines (using ₱ / PHP).
 Analyze the user's financial status for the selected period:
 - Total Inflow (Income/Salary): ₱${inflow.toLocaleString()}
 - Total Outflow (Expenses): ₱${outflow.toLocaleString()}
 - Net Cashflow: ₱${netCashflow.toLocaleString()} (Savings Rate: ${savingsRate}%)
-- Top Spending Categories: ${topCatStr}
-- Active Savings Vaults: ${goalsStr}
-- Mode: ${mode === 'roast' ? 'ROAST (Witty, funny, sarcastic humor poking fun at impulsive habits like late-night Shopee or food delivery, while still offering 1 good piece of advice)' : 'FINANCIAL COACH (Encouraging, analytical, strategic, high-value)'}
+- Days Remaining in Month: ${daysRemaining} days
+- Safe Daily Spending Allowance: ₱${safeDailySpend}/day
+- Category Spending Breakdown: ${topCatStr}
+- Active Category Budgets: ${budgetsStr}
+- Savings Vaults: ${goalsStr}
+- Mode: ${mode === 'roast' ? 'ROAST (Witty, hilarious Filipino roast about late-night Grab rides, Shopee parcels, coffee runs, and surviving petsa de peligro, while still giving 1 helpful tip)' : 'FINANCIAL COACH (Warm, practical, highly strategic coach helping the user handle money smoothly and pacing expenses)'}
+
+Key Instructions:
+1. Provide practical tips on pacing money smoothly so they do not run dry before payday.
+2. If spending is high in categories like Transportation, Food & Dining, or Shopping, explain how to optimize them with realistic PH substitutions.
+3. Guide them on prioritizing Savings Vaults first upon receiving money.
 
 Return strictly valid JSON with this exact schema:
 {
   "score": number, // 0 to 100 financial health score
-  "headline": string, // 1 punchy sentence summarizing their state
+  "headline": string, // 1 punchy sentence summarizing their pacing and state
+  "pacing": {
+    "safeDailySpend": number, // PHP safe daily spend
+    "daysRemaining": number,
+    "status": "comfortable" | "tight" | "critical",
+    "message": string // Pacing guidance sentence
+  },
+  "categoryWarnings": [
+    {
+      "category": string,
+      "amount": number,
+      "percentage": number,
+      "status": "danger" | "warning" | "info",
+      "message": string,
+      "tip": string
+    }
+  ],
   "insights": [
     {
       "title": string, // 2-4 word title
@@ -545,7 +685,7 @@ Return strictly valid JSON with this exact schema:
       "icon": "trending-up" | "alert-circle" | "shield-checkmark" | "trophy" | "flame"
     }
   ],
-  "actionItem": string // 1 single concrete task for this week
+  "actionItem": string // 1 single concrete high-impact task for this week
 }`;
 
       for (const model of models) {
@@ -575,6 +715,15 @@ Return strictly valid JSON with this exact schema:
                   mode,
                   score: typeof parsed.score === 'number' ? Math.min(100, Math.max(0, parsed.score)) : 75,
                   headline: parsed.headline,
+                  pacing: parsed.pacing || {
+                    safeDailySpend,
+                    daysRemaining,
+                    status: pacingStatus,
+                    message: pacingMessage,
+                  },
+                  categoryWarnings: Array.isArray(parsed.categoryWarnings) && parsed.categoryWarnings.length > 0
+                    ? parsed.categoryWarnings.slice(0, 3)
+                    : categoryWarnings.slice(0, 3),
                   insights: parsed.insights.slice(0, 3),
                   actionItem: parsed.actionItem || 'Review top expenses this weekend.',
                   generatedAt: new Date().toISOString(),
@@ -589,34 +738,61 @@ Return strictly valid JSON with this exact schema:
     }
 
     // 3. Smart Algorithmic Fallback (if offline or no API key)
-    const baseScore = inflow === 0 ? 60 : Math.min(100, Math.max(20, Math.round(50 + savingsRate * 0.5 - (outflow > inflow ? 25 : 0))));
+    const baseScore = inflow === 0
+      ? 60
+      : Math.min(100, Math.max(20, Math.round(50 + savingsRate * 0.5 - (outflow > inflow ? 25 : 0))));
     const topCat = categories[0]?.name || 'Shopping';
+
+    // Ensure we have at least one helpful category tip in fallback
+    const fallbackCategoryWarnings = categoryWarnings.length > 0
+      ? categoryWarnings.slice(0, 3)
+      : [
+          {
+            category: topCat,
+            amount: categories[0]?.amount || outflow,
+            percentage: categories[0]?.percentage || 100,
+            status: 'warning' as const,
+            message: `${topCat} is your largest expense driver (${categories[0]?.percentage || 100}% of outflow).`,
+            tip: `Setting a weekly cap on ${topCat} will immediately stabilize your daily cashflow.`,
+          },
+        ];
 
     if (mode === 'roast') {
       return {
         mode: 'roast',
         score: baseScore,
         headline: outflow > inflow
-          ? "Your wallet is screaming for mercy while your parcels are having a party."
+          ? "Your wallet is screaming for mercy while your parcels and rides are having a fiesta."
           : `You're surviving, but ${topCat} is definitely your wallet's final boss.`,
+        pacing: {
+          safeDailySpend,
+          daysRemaining,
+          status: pacingStatus,
+          message: outflow > inflow
+            ? `You have negative cashflow. Stop spending on wants before petsa de peligro takes over!`
+            : `Safe daily allowance is ₱${safeDailySpend}/day for ${daysRemaining} days. Treat yourself, but don't splurge!`,
+        },
+        categoryWarnings: fallbackCategoryWarnings,
         insights: [
           {
             title: 'Add to Cart Therapy',
-            tip: `₱${outflow.toLocaleString()} spent this period. Just remember that adding to cart doesn't count as cardio.`,
+            tip: `₱${outflow.toLocaleString()} spent this period. Remember that ordering GrabFood every time you're slightly hungry isn't a financial strategy.`,
             icon: 'flame',
           },
           {
-            title: 'The Invisible Leak',
-            tip: `${topCat} took the biggest chunk of your money. Maybe pause the flash deals for 48 hours?`,
+            title: 'The Invisible Commute Leak',
+            tip: `${topCat} took the biggest chunk of your money. Maybe pause the rush-hour premium rides for a few days?`,
             icon: 'alert-circle',
           },
           {
             title: 'Emergency Fund Check',
-            tip: goals.length > 0 ? `Your vaults are trying their best. Drop some spare change into them!` : `Zero savings vaults found! Even a piggy bank from 2012 has more balance right now.`,
+            tip: goals.length > 0
+              ? `Your vaults are trying their best. Drop some spare change into them before you spend it on coffee!`
+              : `Zero savings vaults found! Even an empty biscuit tin has more financial security right now.`,
             icon: 'trophy',
           },
         ],
-        actionItem: `Challenge: Go 48 hours with zero non-essential checkouts.`,
+        actionItem: `Challenge: Go 48 hours without food delivery or impulse checkouts.`,
         generatedAt: new Date().toISOString(),
       };
     }
@@ -625,28 +801,37 @@ Return strictly valid JSON with this exact schema:
       mode: 'coach',
       score: baseScore,
       headline: netCashflow >= 0
-        ? `Solid financial discipline with a positive cashflow of +₱${netCashflow.toLocaleString()}.`
-        : `Outflow exceeded inflow by ₱${Math.abs(netCashflow).toLocaleString()}. Time to optimize core expenses.`,
+        ? `Smooth cashflow pacing with a positive net buffer of +₱${netCashflow.toLocaleString()}.`
+        : `Outflow exceeded inflow by ₱${Math.abs(netCashflow).toLocaleString()}. Rebalance non-essential expenses.`,
+      pacing: {
+        safeDailySpend,
+        daysRemaining,
+        status: pacingStatus,
+        message: pacingMessage,
+      },
+      categoryWarnings: fallbackCategoryWarnings,
       insights: [
         {
-          title: 'Cashflow Velocity',
-          tip: `You maintained a ${savingsRate}% savings rate this period. Aim to keep this above 20% consistently.`,
+          title: 'Daily Safe-Spend Pacer',
+          tip: safeDailySpend > 0
+            ? `Keep daily non-essential spend below ₱${safeDailySpend}/day over the next ${daysRemaining} days to stay completely in the green.`
+            : `Your cashflow is currently depleted. Limit all transactions strictly to essential food and bills.`,
           icon: 'trending-up',
         },
         {
-          title: 'Largest Outflow Driver',
-          tip: `${topCat} is your top expense category. Setting a strict monthly cap can yield up to 15% instant savings.`,
+          title: 'Category Burn Control',
+          tip: `${topCat} represents your biggest outflow. Capping this single category will smooth out your end-of-month finances.`,
           icon: 'alert-circle',
         },
         {
-          title: 'Vault Growth Milestone',
+          title: 'Vault-First Rule',
           tip: goals.length > 0
-            ? `${goals.length} active savings vault(s). Consistent micro-deposits accelerate your target completion.`
-            : `Set up an Emergency Fund vault to protect yourself against unexpected expenses.`,
+            ? `${goals.length} active vault(s). Deposit into savings immediately upon receiving income, rather than saving what is left.`
+            : `Open an Emergency Fund vault to cushion unexpected spikes in transportation and medical costs.`,
           icon: 'shield-checkmark',
         },
       ],
-      actionItem: `Set a spending cap for ${topCat} to protect your remaining cashflow.`,
+      actionItem: `Set a weekly budget cap for ${topCat} to protect your remaining ₱${safeDailySpend}/day allowance.`,
       generatedAt: new Date().toISOString(),
     };
   }
