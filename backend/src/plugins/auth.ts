@@ -10,7 +10,10 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     const authHeader = request.headers.authorization;
     const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
 
-    const token = cookieToken || bearerToken;
+    // 3. Try to read from query parameter (for direct file downloads via browser)
+    const queryToken = (request.query as any)?.token;
+
+    const token = cookieToken || bearerToken || queryToken;
 
     if (!token) {
       return reply.status(401).send({ error: 'Unauthorized: Missing authentication token' });

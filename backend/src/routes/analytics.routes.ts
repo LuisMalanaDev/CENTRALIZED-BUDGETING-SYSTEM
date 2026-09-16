@@ -1,6 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { AnalyticsService } from '../services/analytics.service.js';
 import { authenticate } from '../plugins/auth.js';
+import { prisma } from '../prisma.js';
+import { parseDateBounds } from '../utils/dateHelper.js';
 
 export async function analyticsRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticate);
@@ -67,6 +69,47 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
       mode: query.mode,
     });
     return reply.send(insights);
+  });
+
+  // Export Transactions as Downloadable CSV File
+  fastify.get('/export-csv', async (request, reply) => {
+    const query = request.query as any;
+    const { startDate, endDate } = parseDateBounds(query.startDate, query.endDate, query.timezone || query.tz);
+    const rawLabel = query.label || 'Statement';
+    const cleanLabel = rawLabel.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    const whereClause: any = { userId: request.user.userId };
+    if (startDate || endDate) {
+      whereClause.date = {
+        ...(startDate && { gte: startDate }),
+        ...(endDate && { lte: endDate }),
+      };
+    }
+
+    const transactions = await prisma.transaction.findMany({
+      where: whereClause,
+      include: { category: true, account: true },
+      orderBy: { date: 'desc' },
+    });
+
+    const headers = ['Date', 'Type', 'Category', 'Description', 'Amount', 'Payment Method', 'Account', 'Source'];
+    const rows = transactions.map((t) => [
+      t.date ? t.date.toISOString().split('T')[0] : '',
+      t.type,
+      `"${(t.category?.name || 'Uncategorized').replace(/"/g, '""')}"`,
+      `"${(t.description || '').replace(/"/g, '""')}"`,
+      Number(t.amount || 0).toFixed(2),
+      `"${(t.paymentMethod || 'CASH').replace(/"/g, '""')}"`,
+      `"${(t.account?.name || 'Default').replace(/"/g, '""')}"`,
+      `"${(t.source || 'MANUAL').replace(/"/g, '""')}"`,
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+
+    reply
+      .header('Content-Type', 'text/csv; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="WealthSync_${cleanLabel}.csv"`)
+      .send(csvContent);
   });
 }
 

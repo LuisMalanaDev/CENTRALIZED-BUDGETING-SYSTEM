@@ -43,5 +43,5 @@ Thumbs.db
 # IDE & Editors
 .idea/
 .vscode/
-*.swp
-*.swo
+# Lockfiles generated in subfolders
+backend/package-lock.json

@@ -6,14 +6,16 @@ import {
   Modal,
   TouchableOpacity,
   ScrollView,
-  Share,
+  Linking,
   Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/theme';
 import { Transaction, DateRangeFilter } from '../types';
 import { getCategoryName } from '../utils/format';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../api/client';
 
 interface StatementModalProps {
   visible: boolean;
@@ -35,43 +37,24 @@ export const StatementModal: React.FC<StatementModalProps> = ({
   metrics,
 }) => {
   const { user } = useAuth();
-  const [sharing, setSharing] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const currencySymbol = user?.currency === 'USD' ? '$' : '₱';
 
-  const generateCsv = () => {
-    const headers = ['Date', 'Type', 'Category', 'Description', 'Amount', 'Payment Method', 'Source'];
-    const rows = transactions.map((t) => [
-      t.date ? t.date.split('T')[0] : '',
-      t.type,
-      `"${getCategoryName(t.category, 'Expense').replace(/"/g, '""')}"`,
-      `"${(t.description || '').replace(/"/g, '""')}"`,
-      Number(t.amount || 0).toFixed(2),
-      `"${(t.paymentMethod || 'CASH').replace(/"/g, '""')}"`,
-      `"${(t.source || 'MANUAL').replace(/"/g, '""')}"`,
-    ]);
-
-    return [
-      `# WealthSync Financial Statement - ${filter.label || 'Active Period'}`,
-      `# Account: ${user?.name || user?.email || 'User'} (${user?.currency || 'PHP'})`,
-      `# Inflow: ${metrics.totalInflow.toFixed(2)} | Outflow: ${metrics.totalOutflow.toFixed(2)} | Net: ${metrics.netCashflow.toFixed(2)}`,
-      `# Generated: ${new Date().toISOString()}`,
-      headers.join(','),
-      ...rows.map((r) => r.join(',')),
-    ].join('\n');
-  };
-
-  const handleShareCsv = async () => {
-    setSharing(true);
+  const handleDownloadCsv = async () => {
+    setDownloading(true);
     try {
-      const csvData = generateCsv();
-      await Share.share({
-        title: `WealthSync_Statement_${filter.label || 'Export'}.csv`,
-        message: csvData,
-      });
+      const baseUrl = await api.getBaseUrl();
+      const token = await AsyncStorage.getItem('wealthsync_token');
+      const start = filter.startDate || '';
+      const end = filter.endDate || '';
+      const label = filter.label || 'Statement';
+      const downloadUrl = `${baseUrl}/api/analytics/export-csv?token=${encodeURIComponent(token || '')}&startDate=${encodeURIComponent(start)}&endDate=${encodeURIComponent(end)}&label=${encodeURIComponent(label)}&tz=Asia/Manila`;
+
+      await Linking.openURL(downloadUrl);
     } catch (e: any) {
-      Alert.alert('Share Failed', e.message || 'Could not export statement');
+      Alert.alert('Download Error', e.message || 'Could not initiate CSV file download.');
     } finally {
-      setSharing(false);
+      setDownloading(false);
     }
   };
 
@@ -142,16 +125,16 @@ export const StatementModal: React.FC<StatementModalProps> = ({
               </View>
             </View>
 
-            {/* Quick Action Buttons */}
+            {/* Download CSV File Button */}
             <TouchableOpacity
               style={styles.exportPrimaryBtn}
-              onPress={handleShareCsv}
+              onPress={handleDownloadCsv}
               activeOpacity={0.8}
-              disabled={sharing}
+              disabled={downloading}
             >
-              <Ionicons name="share-outline" size={17} color={Colors.black} />
+              <Ionicons name="download-outline" size={18} color={Colors.black} />
               <Text style={styles.exportPrimaryBtnText}>
-                {sharing ? 'Preparing CSV...' : `Export & Share CSV (${transactions.length} Records)`}
+                {downloading ? 'Downloading...' : `Download Statement (.CSV)`}
               </Text>
             </TouchableOpacity>
 
