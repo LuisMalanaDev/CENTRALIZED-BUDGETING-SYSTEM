@@ -230,6 +230,51 @@ export const offlineStorage = {
     await AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(filtered));
   },
 
+  async removeTransactionFromOverviewCache(
+    txId: string,
+    amount: number,
+    type: 'INCOME' | 'EXPENSE' | 'TRANSFER',
+    paymentMethod?: string
+  ): Promise<void> {
+    try {
+      const overviewCache = await this.getOverviewCache();
+      if (!overviewCache) return;
+
+      const updatedTxs = (overviewCache.transactions || []).filter((t) => t.id !== txId);
+      const isExpense = type === 'EXPENSE';
+      const isIncome = type === 'INCOME';
+
+      const newInflow = Math.max(0, (overviewCache.metrics.totalInflow || 0) - (isIncome ? amount : 0));
+      const newOutflow = Math.max(0, (overviewCache.metrics.totalOutflow || 0) - (isExpense ? amount : 0));
+
+      const pm = (paymentMethod || '').toUpperCase();
+      const updatedAccounts = (overviewCache.accounts || []).map((acc) => {
+        const accName = acc.name.toUpperCase();
+        if (pm && (accName.includes(pm) || (pm === 'CASH' && accName.includes('CASH')))) {
+          const diff = isExpense ? amount : isIncome ? -amount : 0;
+          return { ...acc, balance: Number(acc.balance) + diff };
+        }
+        return acc;
+      });
+
+      await this.saveOverviewCache({
+        ...overviewCache,
+        accounts: updatedAccounts,
+        transactions: updatedTxs,
+        metrics: {
+          ...overviewCache.metrics,
+          totalInflow: newInflow,
+          totalOutflow: newOutflow,
+          netCashflow: newInflow - newOutflow,
+          activeMonthInflow: Math.max(0, (overviewCache.metrics.activeMonthInflow || 0) - (isIncome ? amount : 0)),
+          activeMonthOutflow: Math.max(0, (overviewCache.metrics.activeMonthOutflow || 0) - (isExpense ? amount : 0)),
+        },
+      });
+    } catch (e) {
+      console.warn('Failed to update overview cache on transaction deletion:', e);
+    }
+  },
+
   /**
    * Replays queued offline transactions to the backend API.
    * Returns how many transactions succeeded and how many remain.

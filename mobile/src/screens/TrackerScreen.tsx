@@ -122,12 +122,21 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
   };
 
   const handleDeleteOrder = async (orderId: string) => {
+    const target = orders.find((o) => o.id === orderId);
     const previous = [...orders];
     const updated = orders.filter((o) => o.id !== orderId);
     setOrders(updated);
 
     try {
       await offlineStorage.saveTrackerCache(updated);
+      if (target) {
+        await offlineStorage.removeTransactionFromOverviewCache(
+          target.id,
+          target.amount,
+          'EXPENSE',
+          target.paymentMethod
+        );
+      }
       await api.delete(`/api/tracker/${orderId}`);
     } catch (err: any) {
       console.warn('Failed to delete order:', err);

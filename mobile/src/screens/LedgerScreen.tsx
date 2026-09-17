@@ -180,12 +180,21 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
   };
 
   const handleDeleteTransaction = async (txId: string) => {
+    const target = transactions.find((t) => t.id === txId);
     const previous = [...transactions];
     const updated = transactions.filter((t) => t.id !== txId);
     setTransactions(updated);
 
     try {
       await offlineStorage.saveLedgerCache(updated.filter((t) => !t.isOfflinePending));
+      if (target) {
+        await offlineStorage.removeTransactionFromOverviewCache(
+          target.id,
+          target.amount,
+          target.type,
+          target.paymentMethod
+        );
+      }
 
       const queue = await offlineStorage.getOfflineQueue();
       const inQueue = queue.some((item) => item.tempId === txId);
