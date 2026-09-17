@@ -325,7 +325,7 @@ export class TransactionService {
   static async deleteTransaction(userId: string, transactionId: string) {
     return dbSafe(
       () => prisma.$transaction(async (tx) => {
-        const existing = await tx.transaction.findUnique({
+        const existing = await tx.transaction.findFirst({
           where: { id: transactionId, userId },
         });
 

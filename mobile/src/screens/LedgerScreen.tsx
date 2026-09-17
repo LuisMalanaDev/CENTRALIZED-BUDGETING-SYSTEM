@@ -9,6 +9,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Modal,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -161,6 +162,44 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
   const onRefresh = () => {
     setRefreshing(true);
     fetchTransactions();
+  };
+
+  const confirmDeleteTransaction = (tx: Transaction) => {
+    Alert.alert(
+      'Delete Transaction',
+      `Are you sure you want to permanently delete this ${tx.type === 'INCOME' ? 'income' : 'expense'} entry of ${currencySymbol}${tx.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => handleDeleteTransaction(tx.id),
+        },
+      ]
+    );
+  };
+
+  const handleDeleteTransaction = async (txId: string) => {
+    const previous = [...transactions];
+    const updated = transactions.filter((t) => t.id !== txId);
+    setTransactions(updated);
+
+    try {
+      await offlineStorage.saveLedgerCache(updated.filter((t) => !t.isOfflinePending));
+
+      const queue = await offlineStorage.getOfflineQueue();
+      const inQueue = queue.some((item) => item.tempId === txId);
+      if (inQueue) {
+        await offlineStorage.removeOfflineTransaction(txId);
+        return;
+      }
+
+      await api.delete(`/api/transactions/${txId}`);
+    } catch (err: any) {
+      console.warn('Failed to delete transaction:', err);
+      setTransactions(previous);
+      Alert.alert('Error', err?.message || 'Could not delete transaction. Please try again.');
+    }
   };
 
   const [page, setPage] = useState(1);
@@ -389,16 +428,31 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
                 ) : null}
 
                 <View style={styles.txMetaRow}>
-                  <View style={styles.pmBadge}>
-                    <Text style={styles.pmBadgeText}>{tx.paymentMethod}</Text>
-                  </View>
-                  {tx.isOfflinePending && (
-                    <View style={styles.offlineBadge}>
-                      <Ionicons name="cloud-offline-outline" size={10} color="#F59E0B" />
-                      <Text style={styles.offlineBadgeText}>Offline</Text>
+                  <View style={styles.txMetaLeft}>
+                    <View style={styles.pmBadge}>
+                      <Text style={styles.pmBadgeText}>{tx.paymentMethod}</Text>
                     </View>
-                  )}
-                  <Text style={styles.txDateText}>{dateFormatted}</Text>
+                    {tx.isOfflinePending && (
+                      <View style={styles.offlineBadge}>
+                        <Ionicons name="cloud-offline-outline" size={10} color="#F59E0B" />
+                        <Text style={styles.offlineBadgeText}>Offline</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.txMetaRight}>
+                    <Text style={styles.txDateText}>{dateFormatted}</Text>
+                    <TouchableOpacity
+                      style={styles.cardDeleteBtn}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        confirmDeleteTransaction(tx);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </TouchableOpacity>
             );
@@ -534,12 +588,28 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
                 ) : null}
               </View>
 
-              <TouchableOpacity
-                style={styles.modalDoneBtn}
-                onPress={() => setSelectedTx(null)}
-              >
-                <Text style={styles.modalDoneBtnText}>Done</Text>
-              </TouchableOpacity>
+              <View style={styles.modalActionsRow}>
+                <TouchableOpacity
+                  style={styles.modalDeleteBtn}
+                  onPress={() => {
+                    const toDelete = selectedTx;
+                    setSelectedTx(null);
+                    confirmDeleteTransaction(toDelete);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                  <Text style={styles.modalDeleteBtnText}>Delete</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.modalDoneBtn}
+                  onPress={() => setSelectedTx(null)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.modalDoneBtnText}>Done</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
           </View>
@@ -717,6 +787,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.textMuted,
   },
+  txMetaLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  txMetaRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cardDeleteBtn: {
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+  },
   paginationRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -850,12 +935,35 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
   },
+  modalActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 6,
+  },
+  modalDeleteBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  modalDeleteBtnText: {
+    color: '#EF4444',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   modalDoneBtn: {
+    flex: 2,
     backgroundColor: Colors.white,
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
-    marginTop: 4,
   },
   modalDoneBtnText: {
     color: Colors.black,

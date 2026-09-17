@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Modal,
   TextInput,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -102,6 +103,37 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
   const onRefresh = () => {
     setRefreshing(true);
     fetchOrders();
+  };
+
+  const confirmDeleteOrder = (order: TrackerOrder) => {
+    const itemName = order.items || order.merchant || 'this order';
+    Alert.alert(
+      'Delete Tracked Order',
+      `Are you sure you want to permanently delete "${itemName}" (${currencySymbol}${order.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })})? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => handleDeleteOrder(order.id),
+        },
+      ]
+    );
+  };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    const previous = [...orders];
+    const updated = orders.filter((o) => o.id !== orderId);
+    setOrders(updated);
+
+    try {
+      await offlineStorage.saveTrackerCache(updated);
+      await api.delete(`/api/tracker/${orderId}`);
+    } catch (err: any) {
+      console.warn('Failed to delete order:', err);
+      setOrders(previous);
+      Alert.alert('Error', err?.message || 'Could not delete order. Please try again.');
+    }
   };
 
   // Platform / Store Filter State
@@ -443,10 +475,23 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
                   <Text style={styles.orderDate}>
                     {new Date(o.orderDate).toLocaleDateString()}
                   </Text>
-                  <Text style={styles.orderAmount}>
-                    {currencySymbol}
-                    {o.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                  </Text>
+                  <View style={styles.orderBottomRight}>
+                    <Text style={styles.orderAmount}>
+                      {currencySymbol}
+                      {o.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.cardDeleteBtn}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        confirmDeleteOrder(o);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="trash-outline" size={14} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </TouchableOpacity>
             );
@@ -607,12 +652,28 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
                 ) : null}
               </View>
 
-              <TouchableOpacity
-                style={styles.modalDoneBtn}
-                onPress={() => setSelectedOrder(null)}
-              >
-                <Text style={styles.modalDoneBtnText}>Done</Text>
-              </TouchableOpacity>
+              <View style={styles.modalActionsRow}>
+                <TouchableOpacity
+                  style={styles.modalDeleteBtn}
+                  onPress={() => {
+                    const toDelete = selectedOrder;
+                    setSelectedOrder(null);
+                    confirmDeleteOrder(toDelete);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                  <Text style={styles.modalDeleteBtnText}>Delete</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.modalDoneBtn}
+                  onPress={() => setSelectedOrder(null)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.modalDoneBtnText}>Done</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
           </View>
@@ -877,6 +938,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.white,
   },
+  orderBottomRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cardDeleteBtn: {
+    padding: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+  },
   paginationRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1025,12 +1096,35 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 8,
   },
+  modalActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 6,
+  },
+  modalDeleteBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  modalDeleteBtnText: {
+    color: '#EF4444',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   modalDoneBtn: {
+    flex: 2,
     backgroundColor: Colors.white,
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
-    marginTop: 4,
   },
   modalDoneBtnText: {
     color: Colors.black,

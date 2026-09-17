@@ -4,6 +4,7 @@ import { prisma } from '../prisma.js';
 import { mockStore, MockTransaction } from '../services/mockStore.js';
 import { dbSafe } from '../services/dbHelper.js';
 import { parseDateBounds } from '../utils/dateHelper.js';
+import { TransactionService } from '../services/transaction.service.js';
 
 export async function trackerRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticate);
@@ -205,5 +206,16 @@ export async function trackerRoutes(fastify: FastifyInstance) {
     );
 
     return reply.status(201).send({ success: true, transaction });
+  });
+
+  // Delete tracked parcel order
+  fastify.delete('/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      await TransactionService.deleteTransaction(request.user.userId, id);
+      return reply.send({ success: true, message: 'Order deleted successfully' });
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message || 'Failed to delete order' });
+    }
   });
 }
