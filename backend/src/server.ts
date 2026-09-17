@@ -26,6 +26,20 @@ const server = fastify({
 });
 
 async function main() {
+  // Allow empty or whitespace-only bodies for application/json requests
+  server.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body: string, done) => {
+    if (!body || typeof body !== 'string' || body.trim() === '') {
+      return done(null, {});
+    }
+    try {
+      const json = JSON.parse(body);
+      done(null, json);
+    } catch (err: any) {
+      err.statusCode = 400;
+      done(err, undefined);
+    }
+  });
+
   // CORS configuration
   await server.register(cors, {
     origin: (origin, cb) => {

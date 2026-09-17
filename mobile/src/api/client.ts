@@ -30,7 +30,7 @@ class ApiClient {
     const token = await this.getToken();
 
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
       ...(options.headers as Record<string, string>),
     };
 
@@ -54,7 +54,11 @@ class ApiClient {
         let errorMessage = 'An error occurred';
         try {
           const errData = await response.json();
-          errorMessage = errData.error || errData.message || errorMessage;
+          errorMessage =
+            errData.message ||
+            (errData.error && errData.error !== 'Bad Request' ? errData.error : '') ||
+            errData.error ||
+            errorMessage;
         } catch {
           errorMessage = response.statusText || `Request failed with status ${response.status}`;
         }

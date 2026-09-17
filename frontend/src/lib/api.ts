@@ -15,7 +15,7 @@ class ApiClient {
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const token = this.getToken();
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
       ...(options.headers as Record<string, string>),
     };
 
@@ -36,7 +36,11 @@ class ApiClient {
       let errorMessage = 'An error occurred';
       try {
         const errorData = await response.json();
-        errorMessage = errorData.error || errorData.message || errorMessage;
+        errorMessage =
+          errorData.message ||
+          (errorData.error && errorData.error !== 'Bad Request' ? errorData.error : '') ||
+          errorData.error ||
+          errorMessage;
       } catch {
         errorMessage = response.statusText;
       }
