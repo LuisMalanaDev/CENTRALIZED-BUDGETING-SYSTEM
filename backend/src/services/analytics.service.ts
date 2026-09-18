@@ -681,7 +681,7 @@ export class AnalyticsService {
     // 2. Try Gemini API if key is available
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
     if (apiKey) {
-      const models = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
+      const models = ['gemini-3.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
       const topCatStr = categories.length > 0
         ? categories.map((c: any) => `${c.name}: ₱${c.amount.toLocaleString()} (${c.percentage}%)`).join(', ')
         : 'No specific category data logged yet';
@@ -758,9 +758,15 @@ Return strictly valid JSON with this exact schema:
 
           if (res.ok) {
             const data: any = await res.json();
-            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+            let text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
             if (text) {
-              const parsed = JSON.parse(text);
+              text = text.trim();
+              if (text.startsWith('```')) {
+                text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+              }
+              const jsonMatch = text.match(/\{[\s\S]*\}/);
+              if (!jsonMatch) continue;
+              const parsed = JSON.parse(jsonMatch[0]);
               if (parsed.headline && Array.isArray(parsed.insights)) {
                 return {
                   mode,
