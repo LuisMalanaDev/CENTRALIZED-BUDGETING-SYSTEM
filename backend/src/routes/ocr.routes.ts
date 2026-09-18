@@ -8,8 +8,6 @@ const scanReceiptSchema = z.object({
 });
 
 export async function ocrRoutes(fastify: FastifyInstance) {
-  fastify.addHook('preHandler', authenticate);
-
   // Scan paper receipt photo and extract merchant, amount, category, payment method
   fastify.post('/scan-receipt', async (request, reply) => {
     try {
