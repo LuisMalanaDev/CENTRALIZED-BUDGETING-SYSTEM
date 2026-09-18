@@ -20,10 +20,13 @@ export async function ocrRoutes(fastify: FastifyInstance) {
       }
 
       const { imageBase64 } = parsed.data;
+      console.log(`[OCR Route] Received scan request, payload length: ${(imageBase64.length / 1024).toFixed(1)} KB`);
       const result = await OCRService.scanReceipt(imageBase64);
+      console.log('[OCR Route] Scan finished, returning response:', JSON.stringify(result));
 
       return reply.send(result);
     } catch (error: any) {
+      console.error('[OCR Route] Error processing receipt:', error);
       request.log.error(error);
       return reply.status(500).send({
         error: 'OCR Processing Failed',

@@ -39,8 +39,10 @@ class ApiClient {
     }
 
     const url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${endpoint}`;
+    const isHeavyEndpoint = endpoint.includes('/scan-receipt');
+    const timeoutDuration = isHeavyEndpoint ? 60000 : 35000;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 35000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
 
     try {
       const response = await fetch(url, {

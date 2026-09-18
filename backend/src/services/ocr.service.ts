@@ -18,6 +18,7 @@ export class OCRService {
    * Scans a base64 encoded receipt image using OCR and extracts financial metadata.
    */
   static async scanReceipt(base64Image: string): Promise<ParsedReceiptData> {
+    console.log(`[OCR] scanReceipt called, base64 payload size: ${(base64Image.length / 1024).toFixed(1)} KB`);
     // Clean base64 string
     const cleanBase64 = base64Image.includes('base64,')
       ? base64Image.split('base64,')[1]
@@ -31,8 +32,8 @@ export class OCRService {
         if (geminiResult && (geminiResult.amount || geminiResult.merchant)) {
           return geminiResult;
         }
-      } catch (e) {
-        console.warn('Gemini OCR fallback failed, falling back to standard OCR:', e);
+      } catch (e: any) {
+        console.warn('[OCR] Gemini OCR attempt error:', e.message);
       }
     }
 
@@ -54,8 +55,12 @@ export class OCRService {
   private static async scanWithGemini(base64Image: string, apiKey: string): Promise<ParsedReceiptData | null> {
     const modelsToTry = [
       process.env.GEMINI_MODEL,
-      'gemini-3.5-flash',
       'gemini-3.5-flash-lite',
+      'gemini-flash-lite-latest',
+      'gemini-flash-latest',
+      'gemini-3.1-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-3.5-flash',
     ].filter(Boolean) as string[];
 
     const prompt = `Analyze this physical paper receipt image.
@@ -67,11 +72,15 @@ Extract:
 Return strictly valid JSON with keys: merchant, amount, category, paymentMethod.`;
 
     for (const model of modelsToTry) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
       try {
+        console.log(`[OCR] Trying Gemini model: ${model}...`);
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
         const response = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             contents: [
               {
@@ -92,10 +101,11 @@ Return strictly valid JSON with keys: merchant, amount, category, paymentMethod.
             },
           }),
         });
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
           const errText = await response.text();
-          console.warn(`Gemini model ${model} HTTP ${response.status}:`, errText.substring(0, 150));
+          console.warn(`[OCR] Gemini model ${model} HTTP ${response.status}:`, errText.substring(0, 150));
           continue;
         }
 
@@ -103,7 +113,14 @@ Return strictly valid JSON with keys: merchant, amount, category, paymentMethod.
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!text) continue;
 
-        const parsed = JSON.parse(text);
+        let cleanText = text.trim();
+        if (cleanText.startsWith('```')) {
+          cleanText = cleanText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+        }
+        const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) continue;
+
+        const parsed = JSON.parse(jsonMatch[0]);
         const parsedAmount = typeof parsed.amount === 'number' ? parsed.amount : (parseFloat(parsed.amount) || null);
         let pm: 'CASH' | 'GCASH' | 'MAYA' | 'CREDIT_CARD' | 'OTHER' = 'CASH';
         const pmUpper = (parsed.paymentMethod || '').toUpperCase();
@@ -113,18 +130,20 @@ Return strictly valid JSON with keys: merchant, amount, category, paymentMethod.
         else if (pmUpper.includes('CASH')) pm = 'CASH';
 
         if (parsedAmount || parsed.merchant) {
+          console.log(`[OCR] Model ${model} succeeded! Merchant: ${parsed.merchant}, Amount: ${parsedAmount}`);
           return {
             success: true,
             amount: parsedAmount,
             merchant: parsed.merchant || null,
             category: parsed.category || 'Groceries & Supermarket',
             paymentMethod: pm,
-            rawText: text,
+            rawText: cleanText,
             notes: `Extracted via Gemini AI Vision (${model})`,
           };
         }
-      } catch (err) {
-        console.warn(`Gemini model ${model} attempt failed:`, err);
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        console.warn(`[OCR] Gemini model ${model} attempt error:`, err?.message || err);
       }
     }
     return null;
