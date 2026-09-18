@@ -18,11 +18,23 @@ export interface StatementTemplateData {
     paymentMethod: string;
     account: string;
   }>;
+  token?: string;
+  startDate?: string;
+  endDate?: string;
+  timezone?: string;
 }
 
 export function renderStatementHtml(data: StatementTemplateData): string {
   const sym = data.currency === 'USD' ? '$' : '₱';
   const stmtId = `WS-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+
+  const csvParams = new URLSearchParams();
+  if (data.token) csvParams.set('token', data.token);
+  if (data.periodLabel) csvParams.set('label', data.periodLabel);
+  if (data.startDate) csvParams.set('startDate', data.startDate);
+  if (data.endDate) csvParams.set('endDate', data.endDate);
+  if (data.timezone) csvParams.set('tz', data.timezone);
+  const csvHref = `export-csv?${csvParams.toString()}`;
 
   const categoryRows = data.categories
     .map(
@@ -435,7 +447,7 @@ export function renderStatementHtml(data: StatementTemplateData): string {
       <button class="action-btn" onclick="window.print()">
         🖨️ Save as PDF / Print
       </button>
-      <a class="action-btn" href="export-csv?token=${encodeURIComponent(data.accountHolder)}&label=${encodeURIComponent(data.periodLabel)}" download>
+      <a class="action-btn" href="${csvHref}" download>
         📥 Download CSV
       </a>
     </div>

@@ -178,6 +178,19 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
       }))
       .sort((a, b) => b.amount - a.amount);
 
+    let downloadToken: string;
+    try {
+      const qToken = (request.query as any)?.token;
+      if (qToken) {
+        fastify.jwt.verify(qToken);
+        downloadToken = qToken;
+      } else {
+        downloadToken = fastify.jwt.sign({ userId: request.user.userId, email: request.user.email });
+      }
+    } catch {
+      downloadToken = fastify.jwt.sign({ userId: request.user.userId, email: request.user.email });
+    }
+
     const html = renderStatementHtml({
       accountHolder: user?.name || user?.email || 'WealthSync User',
       email: user?.email || '',
@@ -190,6 +203,10 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
       savingsRate,
       categories,
       transactions: txRows,
+      token: downloadToken,
+      startDate: query.startDate,
+      endDate: query.endDate,
+      timezone: query.timezone || query.tz || 'Asia/Manila',
     });
 
     reply.header('Content-Type', 'text/html; charset=utf-8').send(html);
