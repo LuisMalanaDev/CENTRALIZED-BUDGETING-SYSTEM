@@ -73,6 +73,75 @@ export class AnalyticsService {
         });
         const activeMonthOutflow = currentMonthOutflowTxs.reduce((sum, t) => sum + Number(t.amount), 0);
 
+        // Previous Month calculation for Month-over-Month Spending Velocity
+        const prevMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+        const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+        const daysInPrevMonth = new Date(prevMonthYear, prevMonth + 1, 0).getDate();
+        const prevMonthSameDay = Math.min(currentDay, daysInPrevMonth);
+
+        const startOfPrevMonth = new Date(prevMonthYear, prevMonth, 1);
+        const endOfPrevMonthSameDay = new Date(prevMonthYear, prevMonth, prevMonthSameDay, 23, 59, 59, 999);
+        const endOfPrevMonth = new Date(prevMonthYear, prevMonth + 1, 0, 23, 59, 59, 999);
+
+        const prevMonthSameDayOutflowTxs = await prisma.transaction.findMany({
+          where: {
+            userId,
+            type: 'EXPENSE',
+            date: {
+              gte: startOfPrevMonth,
+              lte: endOfPrevMonthSameDay,
+            },
+          },
+          select: { amount: true },
+        });
+        const previousMonthSameDayOutflow = prevMonthSameDayOutflowTxs.reduce((sum, t) => sum + Number(t.amount), 0);
+
+        const prevMonthTotalOutflowTxs = await prisma.transaction.findMany({
+          where: {
+            userId,
+            type: 'EXPENSE',
+            date: {
+              gte: startOfPrevMonth,
+              lte: endOfPrevMonth,
+            },
+          },
+          select: { amount: true },
+        });
+        const previousMonthTotalOutflow = prevMonthTotalOutflowTxs.reduce((sum, t) => sum + Number(t.amount), 0);
+
+        let velocityChangePct = 0;
+        let velocityStatus: 'slower' | 'faster' | 'on_track' = 'on_track';
+        let velocityMessage = '';
+
+        if (previousMonthSameDayOutflow > 0) {
+          velocityChangePct = Math.round(((activeMonthOutflow - previousMonthSameDayOutflow) / previousMonthSameDayOutflow) * 100);
+          if (velocityChangePct < -5) {
+            velocityStatus = 'slower';
+            velocityMessage = `You're spending ${Math.abs(velocityChangePct)}% slower than last month at this same point. Excellent discipline!`;
+          } else if (velocityChangePct > 10) {
+            velocityStatus = 'faster';
+            velocityMessage = `Spending is running ${velocityChangePct}% faster than this point last month. Keep discretionary spend in check.`;
+          } else {
+            velocityStatus = 'on_track';
+            velocityMessage = `Spending pace closely matches last month at this exact date.`;
+          }
+        } else if (activeMonthOutflow > 0) {
+          velocityMessage = `Current month-to-date outflow is ₱${activeMonthOutflow.toLocaleString()}.`;
+        } else {
+          velocityMessage = `Zero expenses recorded for the active month so far.`;
+        }
+
+        const spendingVelocity = {
+          currentMonthSpend: Math.round(activeMonthOutflow * 100) / 100,
+          prevMonthSameDaySpend: Math.round(previousMonthSameDayOutflow * 100) / 100,
+          prevMonthTotalSpend: Math.round(previousMonthTotalOutflow * 100) / 100,
+          changePct: velocityChangePct,
+          status: velocityStatus,
+          message: velocityMessage,
+          currentDay,
+          prevMonthSameDay,
+        };
+
         const overallBudget = await prisma.budget.findFirst({
           where: { userId, categoryId: null },
         });
@@ -103,6 +172,7 @@ export class AnalyticsService {
           overallBudgetLimit: overallBudget ? Number(overallBudget.amount) : 55000,
           remainingDailyBudget: dailyBudgetRemaining,
           daysRemainingInMonth: daysRemaining,
+          spendingVelocity,
         };
       },
       () => {
@@ -149,6 +219,62 @@ export class AnalyticsService {
         const remainingBudget = Math.max(0, budgetAmount - monthlyBurnRate);
         const dailyBudgetRemaining = budgetAmount > 0 ? Math.round((remainingBudget / daysRemaining) * 100) / 100 : 0;
 
+        const prevMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+        const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+        const daysInPrevMonth = new Date(prevMonthYear, prevMonth + 1, 0).getDate();
+        const prevMonthSameDay = Math.min(currentDay, daysInPrevMonth);
+
+        const previousMonthSameDayOutflow = mockStore.transactions
+          .filter((t) => {
+            if (t.userId !== userId && t.userId !== 'demo-user-uuid-1' && t.userId !== 'user-liam') return false;
+            if (t.type !== 'EXPENSE') return false;
+            const d = new Date(t.date);
+            return d.getFullYear() === prevMonthYear && d.getMonth() === prevMonth && d.getDate() <= prevMonthSameDay;
+          })
+          .reduce((sum, t) => sum + t.amount, 0);
+
+        const previousMonthTotalOutflow = mockStore.transactions
+          .filter((t) => {
+            if (t.userId !== userId && t.userId !== 'demo-user-uuid-1' && t.userId !== 'user-liam') return false;
+            if (t.type !== 'EXPENSE') return false;
+            const d = new Date(t.date);
+            return d.getFullYear() === prevMonthYear && d.getMonth() === prevMonth;
+          })
+          .reduce((sum, t) => sum + t.amount, 0);
+
+        let velocityChangePct = 0;
+        let velocityStatus: 'slower' | 'faster' | 'on_track' = 'on_track';
+        let velocityMessage = '';
+
+        if (previousMonthSameDayOutflow > 0) {
+          velocityChangePct = Math.round(((activeMonthOutflow - previousMonthSameDayOutflow) / previousMonthSameDayOutflow) * 100);
+          if (velocityChangePct < -5) {
+            velocityStatus = 'slower';
+            velocityMessage = `You're spending ${Math.abs(velocityChangePct)}% slower than last month at this same point. Excellent discipline!`;
+          } else if (velocityChangePct > 10) {
+            velocityStatus = 'faster';
+            velocityMessage = `Spending is running ${velocityChangePct}% faster than this point last month. Keep discretionary spend in check.`;
+          } else {
+            velocityStatus = 'on_track';
+            velocityMessage = `Spending pace closely matches last month at this exact date.`;
+          }
+        } else if (activeMonthOutflow > 0) {
+          velocityMessage = `Current month-to-date outflow is ₱${activeMonthOutflow.toLocaleString()}.`;
+        } else {
+          velocityMessage = `Zero expenses recorded for the active month so far.`;
+        }
+
+        const spendingVelocity = {
+          currentMonthSpend: Math.round(activeMonthOutflow * 100) / 100,
+          prevMonthSameDaySpend: Math.round(previousMonthSameDayOutflow * 100) / 100,
+          prevMonthTotalSpend: Math.round(previousMonthTotalOutflow * 100) / 100,
+          changePct: velocityChangePct,
+          status: velocityStatus,
+          message: velocityMessage,
+          currentDay,
+          prevMonthSameDay,
+        };
+
         return {
           totalNetWorth: Math.round(totalNetWorth * 100) / 100,
           monthlyBurnRate: Math.round(monthlyBurnRate * 100) / 100,
@@ -163,6 +289,7 @@ export class AnalyticsService {
           overallBudgetLimit: budgetAmount,
           remainingDailyBudget: dailyBudgetRemaining,
           daysRemainingInMonth: daysRemaining,
+          spendingVelocity,
         };
       }
     );

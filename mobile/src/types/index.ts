@@ -91,3 +91,14 @@ export interface DateRangeFilter {
   endDate?: string;
   label: string;
 }
+
+export interface SpendingVelocity {
+  currentMonthSpend: number;
+  prevMonthSameDaySpend: number;
+  prevMonthTotalSpend: number;
+  changePct: number;
+  status: 'slower' | 'faster' | 'on_track';
+  message: string;
+  currentDay?: number;
+  prevMonthSameDay?: number;
+}

@@ -21,7 +21,7 @@ import { SpendingDonutChart } from '../components/SpendingDonutChart';
 import { CashflowBarChart } from '../components/CashflowBarChart';
 import { AiAdvisorModal } from '../components/AiAdvisorModal';
 import { StatementModal } from '../components/StatementModal';
-import { DateRangeFilter, Transaction, Account } from '../types';
+import { DateRangeFilter, Transaction, Account, SpendingVelocity } from '../types';
 import { getCategoryName } from '../utils/format';
 import { offlineStorage } from '../services/offlineStorage';
 
@@ -48,6 +48,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
     budgetCap: number;
     activeMonthInflow?: number;
     activeMonthOutflow?: number;
+    spendingVelocity?: SpendingVelocity;
   }
 
   const [metrics, setMetrics] = useState<MetricsState>({
@@ -184,18 +185,74 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
           budgetCap: metricsRes.budgetCap || metricsRes.overallBudgetLimit || 0,
           activeMonthInflow: Number(metricsRes.activeMonthInflow || inflow),
           activeMonthOutflow: Number(metricsRes.activeMonthOutflow || outflow),
+          spendingVelocity: metricsRes.spendingVelocity,
         };
       } else {
         // Compute locally from transactions
         const inflow = txs.filter((t) => t.type === 'INCOME').reduce((acc, t) => acc + Number(t.amount || 0), 0);
         const outflow = txs.filter((t) => t.type === 'EXPENSE').reduce((acc, t) => acc + Number(t.amount || 0), 0);
+
+        const now = new Date();
+        const curYear = now.getFullYear();
+        const curMonth = now.getMonth();
+        const curDay = now.getDate();
+        const prevYear = curMonth === 0 ? curYear - 1 : curYear;
+        const prevM = curMonth === 0 ? 11 : curMonth - 1;
+
+        const curMonthSpend = txs
+          .filter((t) => {
+            if (t.type !== 'EXPENSE') return false;
+            const d = new Date(t.date);
+            return d.getFullYear() === curYear && d.getMonth() === curMonth;
+          })
+          .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+        const prevMonthSameDaySpend = txs
+          .filter((t) => {
+            if (t.type !== 'EXPENSE') return false;
+            const d = new Date(t.date);
+            return d.getFullYear() === prevYear && d.getMonth() === prevM && d.getDate() <= curDay;
+          })
+          .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+        let chgPct = 0;
+        let vStat: 'slower' | 'faster' | 'on_track' = 'on_track';
+        let vMsg = '';
+        if (prevMonthSameDaySpend > 0) {
+          chgPct = Math.round(((curMonthSpend - prevMonthSameDaySpend) / prevMonthSameDaySpend) * 100);
+          if (chgPct < -5) {
+            vStat = 'slower';
+            vMsg = `You're spending ${Math.abs(chgPct)}% slower than last month at this same date. Great pacing!`;
+          } else if (chgPct > 10) {
+            vStat = 'faster';
+            vMsg = `Spending is running ${chgPct}% faster than this point last month. Keep discretionary spend in check.`;
+          } else {
+            vStat = 'on_track';
+            vMsg = `Spending pace closely matches last month at this exact date.`;
+          }
+        } else if (curMonthSpend > 0) {
+          vMsg = `Current month spending is ₱${curMonthSpend.toLocaleString()}.`;
+        } else {
+          vMsg = `Zero expenses recorded for the active month so far.`;
+        }
+
         newMetrics = {
           totalInflow: inflow,
           totalOutflow: outflow,
           netCashflow: inflow - outflow,
           budgetCap: 0,
-          activeMonthInflow: inflow,
-          activeMonthOutflow: outflow,
+          activeMonthInflow: curMonthSpend > 0 ? curMonthSpend : inflow,
+          activeMonthOutflow: curMonthSpend > 0 ? curMonthSpend : outflow,
+          spendingVelocity: {
+            currentMonthSpend: curMonthSpend,
+            prevMonthSameDaySpend,
+            prevMonthTotalSpend: prevMonthSameDaySpend,
+            changePct: chgPct,
+            status: vStat,
+            message: vMsg,
+            currentDay: curDay,
+            prevMonthSameDay: curDay,
+          },
         };
       }
       setMetrics(newMetrics);
@@ -563,6 +620,106 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
       </View>
 
 
+      {/* ⚡ Month-over-Month Spending Velocity Card */}
+      {metrics.spendingVelocity && (
+        <View style={styles.velocityCard}>
+          <View style={styles.velocityHeader}>
+            <View style={styles.velocityTitleRow}>
+              <View
+                style={[
+                  styles.velocityIconBox,
+                  metrics.spendingVelocity.status === 'slower'
+                    ? styles.velocityIconBoxSlower
+                    : metrics.spendingVelocity.status === 'faster'
+                    ? styles.velocityIconBoxFaster
+                    : styles.velocityIconBoxSteady,
+                ]}
+              >
+                <Ionicons
+                  name={
+                    metrics.spendingVelocity.status === 'slower'
+                      ? 'trending-down'
+                      : metrics.spendingVelocity.status === 'faster'
+                      ? 'trending-up'
+                      : 'swap-horizontal'
+                  }
+                  size={16}
+                  color={
+                    metrics.spendingVelocity.status === 'slower'
+                      ? '#10B981'
+                      : metrics.spendingVelocity.status === 'faster'
+                      ? '#EF4444'
+                      : '#F59E0B'
+                  }
+                />
+              </View>
+              <View>
+                <Text style={styles.velocityTitle}>SPENDING VELOCITY (MoM)</Text>
+                <Text style={styles.velocitySubtitle}>
+                  Day {metrics.spendingVelocity.currentDay || new Date().getDate()} vs Same Point Last Month
+                </Text>
+              </View>
+            </View>
+
+            <View
+              style={[
+                styles.velocityBadge,
+                metrics.spendingVelocity.status === 'slower'
+                  ? styles.velocityBadgeSlower
+                  : metrics.spendingVelocity.status === 'faster'
+                  ? styles.velocityBadgeFaster
+                  : styles.velocityBadgeSteady,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.velocityBadgeText,
+                  metrics.spendingVelocity.status === 'slower'
+                    ? styles.velocityBadgeTextSlower
+                    : metrics.spendingVelocity.status === 'faster'
+                    ? styles.velocityBadgeTextFaster
+                    : styles.velocityBadgeTextSteady,
+                ]}
+              >
+                {metrics.spendingVelocity.status === 'slower'
+                  ? `🟢 ${Math.abs(metrics.spendingVelocity.changePct)}% SLOWER`
+                  : metrics.spendingVelocity.status === 'faster'
+                  ? `🔴 +${metrics.spendingVelocity.changePct}% FASTER`
+                  : '🟡 ON TRACK'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.velocityMetricsRow}>
+            <View style={styles.velocityMetricCol}>
+              <Text style={styles.velocityMetricLabel}>This Month to Date</Text>
+              <Text style={styles.velocityMetricVal}>
+                {currencySymbol}
+                {metrics.spendingVelocity.currentMonthSpend.toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                })}
+              </Text>
+            </View>
+
+            <View style={styles.velocityDivider} />
+
+            <View style={styles.velocityMetricCol}>
+              <Text style={styles.velocityMetricLabel}>Last Month Same Day</Text>
+              <Text style={styles.velocityMetricVal}>
+                {currencySymbol}
+                {metrics.spendingVelocity.prevMonthSameDaySpend.toLocaleString('en-US', {
+                  minimumFractionDigits: 2,
+                })}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.velocityMessage}>
+            {metrics.spendingVelocity.message}
+          </Text>
+        </View>
+      )}
+
       {/* 4 Quick Stat Cards (2x2 Grid) */}
       <View style={styles.statsGrid}>
         <View style={styles.statsRow}>
@@ -620,6 +777,74 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
             </View>
             <Text style={styles.statValue}>{transactions.length} items</Text>
           </View>
+        </View>
+      </View>
+
+      {/* 🏆 Top 3 Money Drains (Filter-Driven) */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="flame" size={16} color="#F59E0B" />
+            <Text style={styles.sectionTitle}>Top Money Drains</Text>
+          </View>
+          <Text style={styles.sectionBadge}>{filter.label || 'Active Filter'}</Text>
+        </View>
+
+        <View style={styles.drainsCard}>
+          {loading ? (
+            <ActivityIndicator color={Colors.white} style={{ marginVertical: 20 }} />
+          ) : breakdown.length === 0 ? (
+            <View style={styles.emptyDrainsBox}>
+              <Ionicons name="shield-checkmark-outline" size={24} color="#10B981" />
+              <Text style={styles.emptyDrainsText}>Zero outflow recorded in this period</Text>
+              <Text style={styles.emptyDrainsSubtext}>Your money is completely preserved for this filter!</Text>
+            </View>
+          ) : (
+            <View style={styles.drainsList}>
+              {breakdown.slice(0, 3).map((item, index) => {
+                const rankEmojis = ['🥇', '🥈', '🥉'];
+                const rankColors = ['#F59E0B', '#94A3B8', '#D97706'];
+                const itemColor = item.color || rankColors[index] || '#A78BFA';
+                const pct = Math.min(100, Math.max(0, item.percentage));
+
+                return (
+                  <View key={item.name + index} style={styles.drainRow}>
+                    <View style={styles.drainTopLine}>
+                      <View style={styles.drainCategoryBox}>
+                        <Text style={styles.drainRankEmoji}>{rankEmojis[index]}</Text>
+                        <Text style={styles.drainCategoryName} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                      </View>
+
+                      <View style={styles.drainAmountBox}>
+                        <Text style={styles.drainAmountText}>
+                          {currencySymbol}
+                          {item.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </Text>
+                        <Text style={[styles.drainPctText, { color: itemColor }]}>
+                          {pct}%
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Visual Progress Bar for this category */}
+                    <View style={styles.drainProgressTrack}>
+                      <View
+                        style={[
+                          styles.drainProgressBar,
+                          {
+                            width: `${pct}%`,
+                            backgroundColor: itemColor,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </View>
       </View>
 
@@ -1481,6 +1706,198 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 11,
     fontWeight: '700',
+  },
+  // Spending Velocity (MoM)
+  velocityCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  velocityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  velocityTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  velocityIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  velocityIconBoxSlower: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  velocityIconBoxFaster: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  velocityIconBoxSteady: {
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+  },
+  velocityTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: Colors.white,
+    letterSpacing: 0.5,
+  },
+  velocitySubtitle: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    marginTop: 1,
+  },
+  velocityBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  velocityBadgeSlower: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: '#10B981',
+  },
+  velocityBadgeFaster: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: '#EF4444',
+  },
+  velocityBadgeSteady: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderColor: '#F59E0B',
+  },
+  velocityBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  velocityBadgeTextSlower: {
+    color: '#10B981',
+  },
+  velocityBadgeTextFaster: {
+    color: '#EF4444',
+  },
+  velocityBadgeTextSteady: {
+    color: '#F59E0B',
+  },
+  velocityMetricsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceSubtle,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  velocityMetricCol: {
+    flex: 1,
+  },
+  velocityMetricLabel: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  velocityMetricVal: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: Colors.white,
+    marginTop: 2,
+  },
+  velocityDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: Colors.border,
+    marginHorizontal: 12,
+  },
+  velocityMessage: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 17,
+  },
+
+  // Top 3 Money Drains
+  drainsCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 16,
+  },
+  emptyDrainsBox: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    gap: 4,
+  },
+  emptyDrainsText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.white,
+    marginTop: 4,
+  },
+  emptyDrainsSubtext: {
+    fontSize: 12,
+    color: Colors.textMuted,
+  },
+  drainsList: {
+    gap: 14,
+  },
+  drainRow: {
+    gap: 6,
+  },
+  drainTopLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  drainCategoryBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  drainRankEmoji: {
+    fontSize: 16,
+  },
+  drainCategoryName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.white,
+    flex: 1,
+  },
+  drainAmountBox: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+  },
+  drainAmountText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: Colors.white,
+  },
+  drainPctText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  drainProgressTrack: {
+    height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  drainProgressBar: {
+    height: '100%',
+    borderRadius: 3,
   },
 });
 
