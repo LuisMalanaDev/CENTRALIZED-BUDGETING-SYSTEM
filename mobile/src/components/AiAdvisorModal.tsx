@@ -36,7 +36,7 @@ interface AiPacing {
 }
 
 interface AiReport {
-  mode: 'coach' | 'roast';
+  mode: 'coach';
   score: number;
   headline: string;
   pacing?: AiPacing;
@@ -57,14 +57,13 @@ export const AiAdvisorModal: React.FC<AiAdvisorModalProps> = ({
   onClose,
   filter,
 }) => {
-  const [mode, setMode] = useState<'coach' | 'roast'>('coach');
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<AiReport | null>(null);
 
-  const fetchInsights = async (targetMode: 'coach' | 'roast') => {
+  const fetchInsights = async () => {
     setLoading(true);
     try {
-      let query = `?mode=${targetMode}`;
+      let query = `?mode=coach`;
       if (filter.startDate && filter.endDate) {
         query += `&startDate=${filter.startDate}&endDate=${filter.endDate}`;
       }
@@ -79,9 +78,9 @@ export const AiAdvisorModal: React.FC<AiAdvisorModalProps> = ({
 
   useEffect(() => {
     if (visible) {
-      fetchInsights(mode);
+      fetchInsights();
     }
-  }, [visible, mode, filter]);
+  }, [visible, filter]);
 
   const getScoreColor = (score: number) => {
     if (score >= 75) return '#10B981';
@@ -118,10 +117,10 @@ export const AiAdvisorModal: React.FC<AiAdvisorModalProps> = ({
           <View style={styles.header}>
             <View style={styles.headerTitleRow}>
               <View style={styles.sparkleIcon}>
-                <Ionicons name="sparkles" size={16} color={mode === 'roast' ? '#F43F5E' : '#A78BFA'} />
+                <Ionicons name="sparkles" size={16} color="#A78BFA" />
               </View>
               <View>
-                <Text style={styles.title}>WealthSync AI Advisor</Text>
+                <Text style={styles.title}>Personal Financial Coach</Text>
                 <Text style={styles.subtitle}>{filter.label || 'Active Period'}</Text>
               </View>
             </View>
@@ -130,44 +129,19 @@ export const AiAdvisorModal: React.FC<AiAdvisorModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Mode Switcher */}
-          <View style={styles.modeTabs}>
-            <TouchableOpacity
-              style={[styles.modeTab, mode === 'coach' && styles.modeTabActive]}
-              onPress={() => setMode('coach')}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="briefcase-outline" size={14} color={mode === 'coach' ? Colors.black : Colors.textMuted} />
-              <Text style={[styles.modeTabText, mode === 'coach' && styles.modeTabTextActive]}>
-                Financial Coach
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.modeTab, mode === 'roast' && styles.modeTabRoastActive]}
-              onPress={() => setMode('roast')}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="flame" size={14} color={mode === 'roast' ? Colors.white : '#F43F5E'} />
-              <Text style={[styles.modeTabText, mode === 'roast' && styles.modeTabRoastTextActive]}>
-                Roast My Spending
-              </Text>
-            </TouchableOpacity>
-          </View>
-
           {/* Content */}
           <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
             {loading ? (
               <View style={styles.loadingBox}>
-                <ActivityIndicator size="large" color={mode === 'roast' ? '#F43F5E' : Colors.white} />
+                <ActivityIndicator size="large" color={Colors.white} />
                 <Text style={styles.loadingText}>
-                  {mode === 'roast' ? 'Cooking up your spending roast...' : 'Analyzing financial health with Gemini...'}
+                  Analyzing financial health...
                 </Text>
               </View>
             ) : report ? (
               <>
                 {/* Score & Headline Hero */}
-                <View style={[styles.scoreHeroCard, mode === 'roast' && styles.scoreHeroRoast]}>
+                <View style={styles.scoreHeroCard}>
                   <View style={styles.scoreRow}>
                     <View style={styles.scoreBadge}>
                       <Text style={[styles.scoreNumber, { color: getScoreColor(report.score) }]}>
@@ -302,7 +276,7 @@ export const AiAdvisorModal: React.FC<AiAdvisorModalProps> = ({
                         <Ionicons
                           name={getIconName(item.icon)}
                           size={18}
-                          color={mode === 'roast' ? '#FB7185' : Colors.white}
+                          color={Colors.white}
                         />
                       </View>
                       <View style={styles.insightContent}>
@@ -314,9 +288,9 @@ export const AiAdvisorModal: React.FC<AiAdvisorModalProps> = ({
                 </View>
 
                 {/* Action Item */}
-                <View style={[styles.actionCard, mode === 'roast' && styles.actionCardRoast]}>
+                <View style={styles.actionCard}>
                   <View style={styles.actionHeader}>
-                    <Ionicons name="checkmark-done-circle" size={18} color={mode === 'roast' ? '#FB7185' : '#10B981'} />
+                    <Ionicons name="checkmark-done-circle" size={18} color="#10B981" />
                     <Text style={styles.actionTitle}>HIGH-IMPACT ACTION</Text>
                   </View>
                   <Text style={styles.actionText}>{report.actionItem}</Text>
@@ -325,7 +299,7 @@ export const AiAdvisorModal: React.FC<AiAdvisorModalProps> = ({
                 {/* Re-analyze button */}
                 <TouchableOpacity
                   style={styles.refreshBtn}
-                  onPress={() => fetchInsights(mode)}
+                  onPress={() => fetchInsights()}
                   activeOpacity={0.8}
                 >
                   <Ionicons name="refresh" size={14} color={Colors.textSecondary} />
@@ -395,47 +369,6 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     marginTop: 1,
   },
-  modeTabs: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    gap: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.borderSubtle,
-  },
-  modeTab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: Colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  modeTabActive: {
-    backgroundColor: Colors.white,
-    borderColor: Colors.white,
-  },
-  modeTabRoastActive: {
-    backgroundColor: '#E11D48',
-    borderColor: '#E11D48',
-  },
-  modeTabText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-  },
-  modeTabTextActive: {
-    color: Colors.black,
-    fontWeight: '700',
-  },
-  modeTabRoastTextActive: {
-    color: Colors.white,
-    fontWeight: '700',
-  },
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 16,
@@ -458,10 +391,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     borderRadius: 16,
     padding: 16,
-  },
-  scoreHeroRoast: {
-    borderColor: 'rgba(244, 63, 94, 0.4)',
-    backgroundColor: 'rgba(244, 63, 94, 0.05)',
   },
   scoreRow: {
     flexDirection: 'row',
@@ -690,10 +619,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 14,
     gap: 6,
-  },
-  actionCardRoast: {
-    backgroundColor: 'rgba(244, 63, 94, 0.08)',
-    borderColor: 'rgba(244, 63, 94, 0.3)',
   },
   actionHeader: {
     flexDirection: 'row',

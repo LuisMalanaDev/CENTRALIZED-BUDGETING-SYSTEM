@@ -60,7 +60,7 @@ export async function analyticsRoutes(fastify: FastifyInstance) {
     return reply.send(trackerData);
   });
 
-  // AI Financial Advisor & Insights (Coach or Roast mode)
+  // AI Personal Financial Coach & Insights
   fastify.get('/insights', async (request, reply) => {
     const query = request.query as any;
     const insights = await AnalyticsService.getAiInsights(request.user.userId, {

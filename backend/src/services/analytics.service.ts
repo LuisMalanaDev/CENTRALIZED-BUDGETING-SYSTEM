@@ -522,7 +522,7 @@ export class AnalyticsService {
     userId: string,
     options?: { startDate?: string; endDate?: string; timezone?: string; mode?: 'coach' | 'roast' }
   ) {
-    const mode = options?.mode === 'roast' ? 'roast' : 'coach';
+    const mode = 'coach' as const;
 
     // 1. Gather live financial figures
     const [summary, breakdownData] = await Promise.all([
@@ -692,32 +692,37 @@ export class AnalyticsService {
         ? budgets.map((b) => `${b.category}: ₱${b.spent.toLocaleString()}/₱${b.limit.toLocaleString()} (${b.pct}% used)`).join(', ')
         : 'No category budgets configured';
 
-      const prompt = `You are WealthSync AI, an expert personal financial advisor and cashflow pacing strategist for users in the Philippines (using ₱ / PHP).
-Analyze the user's financial status for the selected period:
-- Total Inflow (Income/Salary): ₱${inflow.toLocaleString()}
-- Total Outflow (Expenses): ₱${outflow.toLocaleString()}
-- Net Cashflow: ₱${netCashflow.toLocaleString()} (Savings Rate: ${savingsRate}%)
-- Days Remaining in Month: ${daysRemaining} days
-- Safe Daily Spending Allowance: ₱${safeDailySpend}/day
-- Category Spending Breakdown: ${topCatStr}
-- Active Category Budgets: ${budgetsStr}
-- Savings Vaults: ${goalsStr}
-- Mode: ${mode === 'roast' ? 'ROAST (Witty, hilarious Filipino roast about late-night Grab rides, Shopee parcels, coffee runs, and surviving petsa de peligro, while still giving 1 helpful tip)' : 'FINANCIAL COACH (Warm, practical, highly strategic coach helping the user handle money smoothly and pacing expenses)'}
+      const prompt = `You are an assertive, sharp, and practical Personal Financial Coach. Your core mission is to keep the user solvent, prevent month-end cash crunches, and aggressively protect their savings buffer. Currency: ₱ (Philippine Peso).
 
-Key Instructions:
-1. Provide practical tips on pacing money smoothly so they do not run dry before payday.
-2. If spending is high in categories like Transportation, Food & Dining, or Shopping, explain how to optimize them with realistic PH substitutions.
-3. Guide them on prioritizing Savings Vaults first upon receiving money.
+Core Rules:
+1. Strict Math Grounding: Rely ONLY on the pre-computed figures provided below. Never fabricate numbers, balances, or dates.
+2. Concrete Action Steps: Never give generic advice like "cut back on spending" or "make a budget." Prescribe concrete spending caps, micro-targets, or pause periods (e.g., "Cap dining at ₱250/day for 4 days").
+3. Urgency Calibration:
+   - Green (Healthy buffer): Encourage automated micro-savings or smart allocations.
+   - Yellow (Pacing risk): Enforce micro-caps on top discretionary categories.
+   - Red (Cash depletion risk): Trigger "Survival Mode"—freeze all non-essentials until next payday.
+4. Output Style: Scannable, direct, and candid. Use bold inline figures. Limit response to under 180 words. No boilerplate greetings or pleasantries.
+
+User Financial Data:
+- Total Inflow: ₱${inflow.toLocaleString()}
+- Total Outflow: ₱${outflow.toLocaleString()}
+- Net Cashflow: ₱${netCashflow.toLocaleString()} (Savings Rate: ${savingsRate}%)
+- Days Remaining in Month: ${daysRemaining}
+- Safe Daily Spend: ₱${safeDailySpend}/day
+- Pacing Status: ${pacingStatus.toUpperCase()}
+- Category Breakdown: ${topCatStr}
+- Active Budgets: ${budgetsStr}
+- Savings Vaults: ${goalsStr}
 
 Return strictly valid JSON with this exact schema:
 {
-  "score": number, // 0 to 100 financial health score
-  "headline": string, // 1 punchy sentence summarizing their pacing and state
+  "score": number, // 0–100 financial health score
+  "headline": string, // 1 punchy sentence: current state + urgency level
   "pacing": {
-    "safeDailySpend": number, // PHP safe daily spend
+    "safeDailySpend": number,
     "daysRemaining": number,
     "status": "comfortable" | "tight" | "critical",
-    "message": string // Pacing guidance sentence
+    "message": string // 1 concrete pacing directive with ₱ amounts
   },
   "categoryWarnings": [
     {
@@ -725,18 +730,18 @@ Return strictly valid JSON with this exact schema:
       "amount": number,
       "percentage": number,
       "status": "danger" | "warning" | "info",
-      "message": string,
-      "tip": string
+      "message": string, // What's happening with hard numbers
+      "tip": string // Concrete micro-cap or freeze action
     }
   ],
   "insights": [
     {
-      "title": string, // 2-4 word title
-      "tip": string, // 1-2 sentence actionable insight
+      "title": string, // 2–4 word title
+      "tip": string, // 1–2 sentence concrete actionable directive with ₱ amounts
       "icon": "trending-up" | "alert-circle" | "shield-checkmark" | "trophy" | "flame"
     }
   ],
-  "actionItem": string // 1 single concrete high-impact task for this week
+  "actionItem": string // 1 single concrete high-impact task with specific ₱ cap or deadline
 }`;
 
       for (const model of models) {
@@ -750,7 +755,7 @@ Return strictly valid JSON with this exact schema:
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: {
                   response_mime_type: 'application/json',
-                  temperature: mode === 'roast' ? 0.8 : 0.2,
+                  temperature: 0.15,
                 },
               }),
             }
@@ -803,92 +808,80 @@ Return strictly valid JSON with this exact schema:
     // Ensure we have at least one helpful category tip in fallback
     const fallbackCategoryWarnings = categoryWarnings.length > 0
       ? categoryWarnings.slice(0, 3)
-      : [
-          {
-            category: topCat,
-            amount: categories[0]?.amount || outflow,
-            percentage: categories[0]?.percentage || 100,
-            status: 'warning' as const,
-            message: `${topCat} is your largest expense driver (${categories[0]?.percentage || 100}% of outflow).`,
-            tip: `Setting a weekly cap on ${topCat} will immediately stabilize your daily cashflow.`,
-          },
-        ];
+      : categories.length > 0
+        ? [
+            {
+              category: topCat,
+              amount: categories[0]?.amount || outflow,
+              percentage: categories[0]?.percentage || 100,
+              status: (categories[0]?.percentage >= 40 ? 'danger' : 'warning') as 'danger' | 'warning',
+              message: `${topCat} consumed ${categories[0]?.percentage || 100}% of outflow (₱${(categories[0]?.amount || outflow).toLocaleString()}).`,
+              tip: pacingStatus === 'critical'
+                ? `Freeze all ${topCat} spending immediately until next payday.`
+                : `Cap ${topCat} at ₱${Math.round((categories[0]?.amount || outflow) / Math.max(daysRemaining, 1))}/day for the next ${daysRemaining} days.`,
+            },
+          ]
+        : [];
 
-    if (mode === 'roast') {
-      return {
-        mode: 'roast',
-        score: baseScore,
-        headline: outflow > inflow
-          ? "Your wallet is screaming for mercy while your parcels and rides are having a fiesta."
-          : `You're surviving, but ${topCat} is definitely your wallet's final boss.`,
-        pacing: {
-          safeDailySpend,
-          daysRemaining,
-          status: pacingStatus,
-          message: outflow > inflow
-            ? `You have negative cashflow. Stop spending on wants before petsa de peligro takes over!`
-            : `Safe daily allowance is ₱${safeDailySpend}/day for ${daysRemaining} days. Treat yourself, but don't splurge!`,
-        },
-        categoryWarnings: fallbackCategoryWarnings,
-        insights: [
-          {
-            title: 'Add to Cart Therapy',
-            tip: `₱${outflow.toLocaleString()} spent this period. Remember that ordering GrabFood every time you're slightly hungry isn't a financial strategy.`,
-            icon: 'flame',
-          },
-          {
-            title: 'The Invisible Commute Leak',
-            tip: `${topCat} took the biggest chunk of your money. Maybe pause the rush-hour premium rides for a few days?`,
-            icon: 'alert-circle',
-          },
-          {
-            title: 'Emergency Fund Check',
-            tip: goals.length > 0
-              ? `Your vaults are trying their best. Drop some spare change into them before you spend it on coffee!`
-              : `Zero savings vaults found! Even an empty biscuit tin has more financial security right now.`,
-            icon: 'trophy',
-          },
-        ],
-        actionItem: `Challenge: Go 48 hours without food delivery or impulse checkouts.`,
-        generatedAt: new Date().toISOString(),
-      };
+    // Urgency-calibrated headline
+    let headline: string;
+    if (pacingStatus === 'critical') {
+      headline = `SURVIVAL MODE: Outflow exceeded inflow by ₱${Math.abs(netCashflow).toLocaleString()}. Freeze all non-essentials now.`;
+    } else if (pacingStatus === 'tight') {
+      headline = `Pacing risk: ₱${safeDailySpend}/day cap for ${daysRemaining} days. Enforce micro-caps on ${topCat} immediately.`;
+    } else {
+      headline = `Healthy buffer: +₱${netCashflow.toLocaleString()} net. Automate ₱${Math.round(netCashflow * 0.2).toLocaleString()} into savings vaults this week.`;
+    }
+
+    // Urgency-calibrated pacing message
+    let fallbackPacingMessage: string;
+    if (pacingStatus === 'critical') {
+      fallbackPacingMessage = `Cash depleted. Only essential food and bills until next income. Zero discretionary spend.`;
+    } else if (pacingStatus === 'tight') {
+      fallbackPacingMessage = `Hard cap: ₱${safeDailySpend}/day for ${daysRemaining} days. No dining out, no online orders, no Grab premium.`;
+    } else {
+      fallbackPacingMessage = `You can spend ₱${safeDailySpend}/day and still have buffer. Move ₱${Math.round(safeDailySpend * 0.3)}/day into your vault automatically.`;
     }
 
     return {
       mode: 'coach',
       score: baseScore,
-      headline: netCashflow >= 0
-        ? `Smooth cashflow pacing with a positive net buffer of +₱${netCashflow.toLocaleString()}.`
-        : `Outflow exceeded inflow by ₱${Math.abs(netCashflow).toLocaleString()}. Rebalance non-essential expenses.`,
+      headline,
       pacing: {
         safeDailySpend,
         daysRemaining,
         status: pacingStatus,
-        message: pacingMessage,
+        message: fallbackPacingMessage,
       },
       categoryWarnings: fallbackCategoryWarnings,
       insights: [
         {
-          title: 'Daily Safe-Spend Pacer',
+          title: 'Daily Spend Cap',
           tip: safeDailySpend > 0
-            ? `Keep daily non-essential spend below ₱${safeDailySpend}/day over the next ${daysRemaining} days to stay completely in the green.`
-            : `Your cashflow is currently depleted. Limit all transactions strictly to essential food and bills.`,
-          icon: 'trending-up',
+            ? `Hard limit: ₱${safeDailySpend}/day across all non-essential categories for the next ${daysRemaining} days. Track every purchase.`
+            : `Cashflow is zero or negative. Only essential groceries and bills. Freeze all discretionary spending.`,
+          icon: pacingStatus === 'critical' ? 'flame' : 'trending-up',
         },
         {
-          title: 'Category Burn Control',
-          tip: `${topCat} represents your biggest outflow. Capping this single category will smooth out your end-of-month finances.`,
+          title: `${topCat} Micro-Cap`,
+          tip: categories[0]
+            ? `${topCat} is ₱${categories[0].amount.toLocaleString()} (${categories[0].percentage}%). Cap it at ₱${Math.round(categories[0].amount / Math.max(daysRemaining, 1))}/day starting today.`
+            : `Log your expenses to get category-specific micro-caps and burn alerts.`,
           icon: 'alert-circle',
         },
         {
-          title: 'Vault-First Rule',
+          title: 'Vault-First Deposit',
           tip: goals.length > 0
-            ? `${goals.length} active vault(s). Deposit into savings immediately upon receiving income, rather than saving what is left.`
-            : `Open an Emergency Fund vault to cushion unexpected spikes in transportation and medical costs.`,
+            ? `${goals.length} vault(s) active. On next payday, deposit savings FIRST before any discretionary spend.`
+            : `No savings vault found. Create an Emergency Fund vault now—even ₱500 is a start.`,
           icon: 'shield-checkmark',
         },
       ],
-      actionItem: `Set a weekly budget cap for ${topCat} to protect your remaining ₱${safeDailySpend}/day allowance.`,
+      actionItem: pacingStatus === 'critical'
+        ? `FREEZE: ₱0 discretionary spend for the next 48 hours. Only food and bills.`
+        : pacingStatus === 'tight'
+        ? `Cap ${topCat} at ₱${Math.round((categories[0]?.amount || 500) / Math.max(daysRemaining, 1))}/day for ${daysRemaining} days.`
+        : `Move ₱${Math.round(netCashflow * 0.2).toLocaleString()} into your savings vault before this weekend.`,
       generatedAt: new Date().toISOString(),
     };
   }
