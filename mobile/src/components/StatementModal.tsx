@@ -143,7 +143,7 @@ export const StatementModal: React.FC<StatementModalProps> = ({
               </View>
             </View>
 
-            {/* Download Buttons: Visual Statement & CSV */}
+            {/* Download Buttons: Visual Statement (PDF) & CSV */}
             <View style={styles.downloadButtonsRow}>
               <TouchableOpacity
                 style={styles.exportVisualBtn}
@@ -151,10 +151,15 @@ export const StatementModal: React.FC<StatementModalProps> = ({
                 activeOpacity={0.8}
                 disabled={downloading}
               >
-                <Ionicons name="document-text" size={17} color={Colors.black} />
-                <Text style={styles.exportVisualBtnText}>
-                  {downloading ? 'Loading...' : 'Executive Statement (PDF)'}
-                </Text>
+                <Ionicons name="document-text" size={18} color={Colors.black} />
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={styles.exportVisualBtnText}>
+                    {downloading ? 'Preparing...' : 'Download & Share Visual PDF'}
+                  </Text>
+                  <Text style={styles.exportVisualBtnSub}>
+                    Designed statement ready for Messenger or Email
+                  </Text>
+                </View>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -163,8 +168,8 @@ export const StatementModal: React.FC<StatementModalProps> = ({
                 activeOpacity={0.8}
                 disabled={downloading}
               >
-                <Ionicons name="download-outline" size={16} color={Colors.white} />
-                <Text style={styles.exportCsvBtnText}>Download Spreadsheet (.CSV)</Text>
+                <Ionicons name="download-outline" size={15} color={Colors.textSecondary} />
+                <Text style={styles.exportCsvBtnText}>Export Raw CSV (Spreadsheet)</Text>
               </TouchableOpacity>
             </View>
 
@@ -338,6 +343,12 @@ const styles = StyleSheet.create({
     color: Colors.black,
     fontSize: 14,
     fontWeight: '700',
+  },
+  exportVisualBtnSub: {
+    color: '#475569',
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 1,
   },
   exportCsvBtn: {
     flexDirection: 'row',

@@ -82,6 +82,7 @@ export function renderStatementHtml(data: StatementTemplateData): string {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
     :root {
       --bg: #090A0F;
@@ -100,7 +101,7 @@ export function renderStatementHtml(data: StatementTemplateData): string {
       background-color: var(--bg);
       color: var(--text);
       font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
-      padding: 32px 16px 80px;
+      padding: 32px 16px 90px;
       line-height: 1.5;
     }
 
@@ -109,39 +110,63 @@ export function renderStatementHtml(data: StatementTemplateData): string {
       margin: 0 auto;
     }
 
+    /* Page-break avoidance for PDF renderer */
+    .kpi-card, .meta-card, .cats-card, .table-card, tr {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
     /* Floating Action Bar */
     .actions-bar {
       position: fixed;
       bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(18, 20, 28, 0.9);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--card-border);
+      background: rgba(18, 20, 28, 0.95);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.18);
       border-radius: 999px;
-      padding: 8px 16px;
+      padding: 8px 12px;
       display: flex;
-      gap: 12px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-      z-index: 100;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 12px 36px rgba(0,0,0,0.65);
+      z-index: 9999;
+      max-width: 95vw;
     }
 
     .action-btn {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      background: #FFFFFF;
-      color: #000000;
-      border: none;
-      padding: 8px 16px;
+      padding: 10px 18px;
       border-radius: 999px;
       font-size: 13px;
       font-weight: 700;
       cursor: pointer;
       text-decoration: none;
-      transition: opacity 0.2s;
+      border: none;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+      white-space: nowrap;
     }
-    .action-btn:hover { opacity: 0.9; }
+    .action-btn:active { transform: scale(0.96); }
+    .action-btn-primary {
+      background: #FFFFFF;
+      color: #000000;
+      box-shadow: 0 4px 12px rgba(255, 255, 255, 0.15);
+    }
+    .action-btn-share {
+      background: linear-gradient(135deg, #0EA5E9, #6366F1);
+      color: #FFFFFF;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+    }
+    .action-btn-subtle {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+      padding: 10px 14px;
+    }
+    .action-btn:hover { opacity: 0.92; }
 
     /* Header */
     .header {
@@ -441,16 +466,20 @@ export function renderStatementHtml(data: StatementTemplateData): string {
   </style>
 </head>
 <body>
-  <div class="container">
-    <!-- Floating Print/Download Action Bar -->
-    <div class="actions-bar">
-      <button class="action-btn" onclick="window.print()">
-        🖨️ Save as PDF / Print
-      </button>
-      <a class="action-btn" href="${csvHref}" download>
-        📥 Download CSV
-      </a>
-    </div>
+  <!-- Floating Action Bar (Never included in PDF export) -->
+  <div class="actions-bar">
+    <button class="action-btn action-btn-primary" id="btn-download-pdf" onclick="downloadPdf()">
+      📥 Download PDF
+    </button>
+    <button class="action-btn action-btn-share" id="btn-share-pdf" onclick="sharePdf()">
+      📤 Send via Messenger / Email
+    </button>
+    <a class="action-btn action-btn-subtle" href="${csvHref}" download title="Download raw spreadsheet data">
+      CSV
+    </a>
+  </div>
+
+  <div class="container" id="statement-doc">
 
     <!-- Header -->
     <div class="header">
@@ -545,6 +574,101 @@ export function renderStatementHtml(data: StatementTemplateData): string {
       This document serves as an itemized personal financial ledger and proof of cashflow.
     </div>
   </div>
+
+  <script>
+    const cleanFilename = 'WealthSync_Statement_${data.periodLabel.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf';
+
+    function getPdfOptions() {
+      return {
+        margin: [10, 8, 10, 8],
+        filename: cleanFilename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#090A0F',
+          scrollY: 0,
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+      };
+    }
+
+    async function downloadPdf() {
+      if (typeof html2pdf === 'undefined') {
+        alert('PDF generator is still loading. Please try again in 2 seconds.');
+        return;
+      }
+      const btn = document.getElementById('btn-download-pdf');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '⏳ Generating PDF...';
+      btn.disabled = true;
+
+      try {
+        const element = document.getElementById('statement-doc');
+        await html2pdf().set(getPdfOptions()).from(element).save();
+        btn.innerHTML = '✅ Saved to Downloads!';
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+          btn.disabled = false;
+        }, 3000);
+      } catch (err) {
+        console.error('PDF Generation Error:', err);
+        alert('Could not generate PDF: ' + (err.message || err));
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    async function sharePdf() {
+      if (typeof html2pdf === 'undefined') {
+        alert('PDF generator is still loading. Please try again in 2 seconds.');
+        return;
+      }
+      const btn = document.getElementById('btn-share-pdf');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '⏳ Preparing PDF...';
+      btn.disabled = true;
+
+      try {
+        const element = document.getElementById('statement-doc');
+        const blob = await html2pdf().set(getPdfOptions()).from(element).outputPdf('blob');
+        const file = new File([blob], cleanFilename, { type: 'application/pdf' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'WealthSync Financial Statement',
+            text: 'Here is my WealthSync Financial Statement for ${data.periodLabel}.'
+          });
+          btn.innerHTML = '✅ Shared!';
+        } else {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = cleanFilename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          btn.innerHTML = '📥 Downloaded!';
+          alert('PDF downloaded to your device! You can now attach and send it directly in Messenger or Email.');
+        }
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+          btn.disabled = false;
+        }, 3500);
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.error('PDF Share Error:', err);
+          alert('Could not share PDF: ' + (err.message || err));
+        }
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    }
+  </script>
 </body>
 </html>`;
 }
