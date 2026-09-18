@@ -20,6 +20,7 @@ import { prisma } from './prisma.js';
 dotenv.config();
 
 const server = fastify({
+  bodyLimit: 50 * 1024 * 1024, // 50MB limit to support high-res photo OCR
   logger: {
     level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
   },
@@ -27,7 +28,7 @@ const server = fastify({
 
 async function main() {
   // Allow empty or whitespace-only bodies for application/json requests
-  server.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body: string, done) => {
+  server.addContentTypeParser('application/json', { parseAs: 'string', bodyLimit: 50 * 1024 * 1024 }, (_req, body: string, done) => {
     if (!body || typeof body !== 'string' || body.trim() === '') {
       return done(null, {});
     }

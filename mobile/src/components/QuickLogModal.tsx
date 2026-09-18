@@ -110,13 +110,13 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({
           ? await ImagePicker.launchCameraAsync({
               mediaTypes: ['images'],
               allowsEditing: true,
-              quality: 0.6,
+              quality: 0.5,
               base64: true,
             })
           : await ImagePicker.launchImageLibraryAsync({
               mediaTypes: ['images'],
               allowsEditing: true,
-              quality: 0.6,
+              quality: 0.5,
               base64: true,
             });
 
@@ -208,9 +208,18 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({
       }
     } catch (err: any) {
       console.warn('Receipt scan error:', err);
+      const errMsg = (err?.message || '').toLowerCase();
+      let userMsg = 'Could not scan receipt. Please enter details manually.';
+      if (errMsg.includes('timeout') || errMsg.includes('taking too long') || errMsg.includes('waking up')) {
+        userMsg = 'Scanner took too long to respond. Please try again or enter details manually.';
+      } else if (errMsg.includes('network') || errMsg.includes('connection')) {
+        userMsg = 'Cannot connect to scanner. Check your internet connection.';
+      } else if (err?.message && err.message !== 'An error occurred') {
+        userMsg = `${err.message}. Please enter details manually.`;
+      }
       setScanFeedback({
         type: 'warning',
-        message: 'Could not scan receipt. Please enter details manually.',
+        message: userMsg,
       });
     } finally {
       setScanning(false);

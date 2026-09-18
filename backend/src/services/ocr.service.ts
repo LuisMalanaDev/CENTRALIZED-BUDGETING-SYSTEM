@@ -54,9 +54,8 @@ export class OCRService {
   private static async scanWithGemini(base64Image: string, apiKey: string): Promise<ParsedReceiptData | null> {
     const modelsToTry = [
       process.env.GEMINI_MODEL,
-      'gemini-3.6-flash',
+      'gemini-3.5-flash',
       'gemini-3.5-flash-lite',
-      'gemini-flash-latest',
     ].filter(Boolean) as string[];
 
     const prompt = `Analyze this physical paper receipt image.
@@ -95,6 +94,8 @@ Return strictly valid JSON with keys: merchant, amount, category, paymentMethod.
         });
 
         if (!response.ok) {
+          const errText = await response.text();
+          console.warn(`Gemini model ${model} HTTP ${response.status}:`, errText.substring(0, 150));
           continue;
         }
 
