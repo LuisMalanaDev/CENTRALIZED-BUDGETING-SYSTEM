@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -248,8 +248,46 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
     setPage(1);
   }, [filter, selectedPlatform, selectedPriceId, appliedMin, appliedMax]);
 
-  const totalSpent = filteredOrders.reduce((acc, o) => acc + (o.amount || 0), 0);
-  const inTransitCount = filteredOrders.filter((o) => o.status === 'IN_TRANSIT' || o.status === 'TO_SHIP').length;
+  const getOrderPlatformKey = (o: TrackerOrder): 'SHOPEE' | 'GOOGLE_PLAY' | 'LAZADA' | 'OTHER' => {
+    const combined = `${o.platform || ''} ${o.merchant || ''} ${o.source || ''} ${o.notes || ''} ${o.items || ''}`.toUpperCase();
+    if (combined.includes('SHOPEE')) return 'SHOPEE';
+    if (combined.includes('GOOGLE') || combined.includes('PLAY')) return 'GOOGLE_PLAY';
+    if (combined.includes('LAZADA')) return 'LAZADA';
+    return 'OTHER';
+  };
+
+  const totalSpent = filteredOrders.reduce((acc, o) => acc + (Number(o.amount) || 0), 0);
+  const inTransitCount = filteredOrders.filter(
+    (o) => o.status === 'IN_TRANSIT' || o.status === 'TO_SHIP' || o.status === 'PENDING'
+  ).length;
+  const deliveredCount = filteredOrders.filter(
+    (o) => o.status === 'DELIVERED' || o.status === 'COMPLETED'
+  ).length;
+
+  const platformBreakdown = useMemo(() => {
+    const map: Record<'SHOPEE' | 'GOOGLE_PLAY' | 'LAZADA' | 'OTHER', { label: string; color: string; amount: number; count: number }> = {
+      SHOPEE: { label: 'Shopee', color: '#EE4D2D', amount: 0, count: 0 },
+      GOOGLE_PLAY: { label: 'Google Play', color: '#01875F', amount: 0, count: 0 },
+      LAZADA: { label: 'Lazada', color: '#3B82F6', amount: 0, count: 0 },
+      OTHER: { label: 'Other', color: '#8B5CF6', amount: 0, count: 0 },
+    };
+
+    filteredOrders.forEach((o) => {
+      const key = getOrderPlatformKey(o);
+      const amt = Number(o.amount) || 0;
+      map[key].amount += amt;
+      map[key].count += 1;
+    });
+
+    return (['SHOPEE', 'GOOGLE_PLAY', 'LAZADA', 'OTHER'] as const)
+      .filter((key) => map[key].amount > 0 || map[key].count > 0)
+      .map((key) => ({
+        key,
+        ...map[key],
+        percent: totalSpent > 0 ? (map[key].amount / totalSpent) * 100 : 0,
+      }));
+  }, [filteredOrders, totalSpent]);
+
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
   const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -290,19 +328,87 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* Hero Stats */}
-      <View style={styles.heroRow}>
-        <View style={styles.heroCard}>
-          <Text style={styles.heroLabel}>PARCEL SPEND</Text>
-          <Text style={styles.heroValue}>
-            {currencySymbol}
-            {totalSpent.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-          </Text>
+      {/* Online Spend & Parcel Counter Hero Card */}
+      <View style={styles.trackerHeroCard}>
+        <View style={styles.trackerHeroTop}>
+          <View>
+            <View style={styles.trackerHeroLabelRow}>
+              <Ionicons name="cart-outline" size={12} color={Colors.textMuted} />
+              <Text style={styles.trackerHeroLabel}>ONLINE & PARCEL SPEND</Text>
+            </View>
+            <Text style={styles.trackerHeroAmount}>
+              {currencySymbol}
+              {totalSpent.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.parcelStatusBadge,
+              inTransitCount > 0 ? styles.parcelBadgeTransit : styles.parcelBadgeDelivered,
+            ]}
+          >
+            <Ionicons
+              name={inTransitCount > 0 ? 'cube' : 'checkmark-circle'}
+              size={12}
+              color={inTransitCount > 0 ? '#F59E0B' : '#10B981'}
+            />
+            <Text
+              style={[
+                styles.parcelStatusText,
+                inTransitCount > 0 ? styles.parcelTextTransit : styles.parcelTextDelivered,
+              ]}
+            >
+              {inTransitCount > 0
+                ? `${inTransitCount} ON THE WAY`
+                : filteredOrders.length > 0
+                ? 'ALL DELIVERED'
+                : 'NO ORDERS'}
+            </Text>
+          </View>
         </View>
 
-        <View style={styles.heroCard}>
-          <Text style={styles.heroLabel}>ACTIVE DELIVERIES</Text>
-          <Text style={styles.heroValue}>{inTransitCount} items</Text>
+        {totalSpent > 0 && platformBreakdown.length > 0 && (
+          <View style={styles.platformBarSection}>
+            <View style={styles.multiProgressBar}>
+              {platformBreakdown.map((item) => (
+                <View
+                  key={item.key}
+                  style={[
+                    styles.progressBarSegment,
+                    {
+                      width: `${Math.max(item.percent, 3)}%`,
+                      backgroundColor: item.color,
+                    },
+                  ]}
+                />
+              ))}
+            </View>
+
+            <View style={styles.platformLegendRow}>
+              {platformBreakdown.map((item) => (
+                <View key={item.key} style={styles.legendItem}>
+                  <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+                  <Text style={styles.legendLabel}>{item.label}</Text>
+                  <Text style={styles.legendPercent}>{item.percent.toFixed(0)}%</Text>
+                  <Text style={styles.legendAmount}>
+                    ({currencySymbol}{item.amount.toLocaleString('en-US', { maximumFractionDigits: 0 })})
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        <View style={styles.trackerHeroMetaRow}>
+          <Text style={styles.trackerHeroMetaText}>
+            {filteredOrders.length} order{filteredOrders.length === 1 ? '' : 's'} tracked
+          </Text>
+          {deliveredCount > 0 && (
+            <Text style={styles.trackerHeroMetaSub}>
+              {deliveredCount} delivered / completed
+            </Text>
+          )}
         </View>
       </View>
 
@@ -831,30 +937,125 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.black,
   },
-  heroRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 8,
-  },
-  heroCard: {
-    flex: 1,
+  trackerHeroCard: {
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 14,
-    padding: 14,
-    gap: 4,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    gap: 12,
   },
-  heroLabel: {
-    fontSize: 11,
+  trackerHeroTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  trackerHeroLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 4,
+  },
+  trackerHeroLabel: {
+    fontSize: 10,
     fontWeight: '700',
     color: Colors.textMuted,
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
-  heroValue: {
-    fontSize: 18,
+  trackerHeroAmount: {
+    fontSize: 22,
     fontWeight: '800',
     color: Colors.white,
+    letterSpacing: -0.5,
+  },
+  parcelStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  parcelBadgeTransit: {
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+  },
+  parcelBadgeDelivered: {
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+  },
+  parcelStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  parcelTextTransit: {
+    color: '#F59E0B',
+  },
+  parcelTextDelivered: {
+    color: '#10B981',
+  },
+  platformBarSection: {
+    gap: 8,
+  },
+  multiProgressBar: {
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: Colors.surfaceSubtle,
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  progressBarSegment: {
+    height: '100%',
+  },
+  platformLegendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    alignItems: 'center',
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  legendDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  legendLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  legendPercent: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  legendAmount: {
+    fontSize: 10,
+    color: Colors.textMuted,
+  },
+  trackerHeroMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  trackerHeroMetaText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textMuted,
+  },
+  trackerHeroMetaSub: {
+    fontSize: 11,
+    color: Colors.textMuted,
   },
   emptyCard: {
     backgroundColor: Colors.surface,

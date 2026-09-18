@@ -32,6 +32,15 @@ const CATEGORY_OPTIONS = [
   { id: 'Other Expense', label: 'Other', icon: 'ellipsis-horizontal-outline' },
 ];
 
+const PAYMENT_METHOD_OPTIONS = [
+  { id: 'ALL', label: 'All Methods', icon: 'wallet-outline' },
+  { id: 'GCASH', label: 'GCash', icon: 'phone-portrait-outline' },
+  { id: 'MAYA', label: 'Maya', icon: 'card-outline' },
+  { id: 'CASH', label: 'Cash', icon: 'cash-outline' },
+  { id: 'BANK_TRANSFER', label: 'Bank', icon: 'business-outline' },
+  { id: 'CREDIT_CARD', label: 'Card', icon: 'card-outline' },
+];
+
 interface LedgerScreenProps {
   filter: DateRangeFilter;
   onFilterChange: (filter: DateRangeFilter) => void;
@@ -49,8 +58,15 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
   const [refreshing, setRefreshing] = useState(false);
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('ALL');
   const [search, setSearch] = useState('');
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editAmount, setEditAmount] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editPaymentMethod, setEditPaymentMethod] = useState('GCASH');
+  const [editDescription, setEditDescription] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const currencySymbol = user?.currency === 'USD' ? '$' : '₱';
 
@@ -216,7 +232,72 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
 
   useEffect(() => {
     setPage(1);
-  }, [search, typeFilter, filter, selectedCategory]);
+  }, [search, typeFilter, filter, selectedCategory, selectedPaymentMethod]);
+
+  const handleStartEdit = () => {
+    if (!selectedTx) return;
+    setEditAmount(String(selectedTx.amount || ''));
+    setEditCategory(typeof selectedTx.category === 'string' ? selectedTx.category : selectedTx.category?.name || 'Other Expense');
+    setEditPaymentMethod((selectedTx.paymentMethod || 'GCASH').toUpperCase());
+    setEditDescription(selectedTx.description || '');
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedTx) return;
+    const num = parseFloat(editAmount.replace(/,/g, ''));
+    if (isNaN(num) || num <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid positive amount.');
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const updatedData: Partial<Transaction> = {
+        amount: num,
+        category: editCategory,
+        paymentMethod: editPaymentMethod,
+        description: editDescription.trim(),
+      };
+
+      if (!selectedTx.isOfflinePending) {
+        await api.put(`/api/transactions/${selectedTx.id}`, {
+          amount: num,
+          category: editCategory,
+          paymentMethod: editPaymentMethod,
+          description: editDescription.trim(),
+        });
+      }
+
+      const updatedTxs = transactions.map((t) =>
+        t.id === selectedTx.id ? { ...t, ...updatedData } : t
+      );
+      setTransactions(updatedTxs);
+      await offlineStorage.saveLedgerCache(updatedTxs.filter((t) => !t.isOfflinePending));
+
+      // Also update overview cache if present
+      const overviewCache = await offlineStorage.getOverviewCache();
+      if (overviewCache) {
+        const updatedOverviewTxs = overviewCache.transactions.map((t) =>
+          t.id === selectedTx.id ? { ...t, ...updatedData } : t
+        );
+        await offlineStorage.saveOverviewCache({
+          ...overviewCache,
+          transactions: updatedOverviewTxs,
+        });
+      }
+
+      setSelectedTx({
+        ...selectedTx,
+        ...updatedData,
+      });
+      setIsEditing(false);
+    } catch (err: any) {
+      Alert.alert('Update Failed', err?.message || 'Could not update transaction.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   const filteredTransactions = transactions.filter((tx) => {
     // 1. Exclude online orders and email-synced receipts (these belong exclusively in Tracker)
@@ -252,7 +333,13 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
       if (!isMatch) return false;
     }
 
-    // 4. Search query
+    // 4. Payment Method filter (GCash, Maya, Cash, etc.)
+    if (selectedPaymentMethod !== 'ALL') {
+      const pm = (tx.paymentMethod || '').toUpperCase();
+      if (pm !== selectedPaymentMethod) return false;
+    }
+
+    // 5. Search query
     if (search.trim()) {
       const q = search.toLowerCase();
       const matchCat = getCategoryName(tx.category, '').toLowerCase().includes(q);
@@ -262,6 +349,16 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
     }
     return true;
   });
+
+  const filteredInflow = filteredTransactions
+    .filter((t) => t.type === 'INCOME')
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+  const filteredOutflow = filteredTransactions
+    .filter((t) => t.type === 'EXPENSE')
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+  const filteredNet = filteredInflow - filteredOutflow;
 
   const totalPages = Math.max(1, Math.ceil(filteredTransactions.length / PAGE_SIZE));
   const paginatedTransactions = filteredTransactions.slice(
@@ -335,6 +432,44 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
         </ScrollView>
       </View>
 
+      {/* Payment Method Filter Horizontal Scroll */}
+      <View style={styles.pmFilterWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryScroll}
+        >
+          {PAYMENT_METHOD_OPTIONS.map((pm) => {
+            const isSelected = selectedPaymentMethod === pm.id;
+            return (
+              <TouchableOpacity
+                key={pm.id}
+                style={[
+                  styles.categoryPill,
+                  isSelected && styles.categoryPillActive,
+                ]}
+                onPress={() => setSelectedPaymentMethod(pm.id)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={pm.icon as any}
+                  size={12}
+                  color={isSelected ? Colors.black : Colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.categoryPillText,
+                    isSelected && styles.categoryPillTextActive,
+                  ]}
+                >
+                  {pm.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
       {/* Search Bar */}
       <View style={styles.searchBox}>
         <Ionicons name="search" size={16} color={Colors.textMuted} />
@@ -373,6 +508,58 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
             </Text>
           </TouchableOpacity>
         ))}
+      </View>
+
+      {/* 📊 Live Filtered Summary Bar */}
+      <View style={styles.filteredSummaryCard}>
+        <View style={styles.filteredSummaryLeft}>
+          <View style={styles.filteredSummaryBadge}>
+            <Ionicons
+              name={
+                selectedCategory !== 'ALL'
+                  ? 'pricetag'
+                  : selectedPaymentMethod !== 'ALL'
+                  ? 'wallet'
+                  : search.trim()
+                  ? 'search'
+                  : 'receipt'
+              }
+              size={12}
+              color={Colors.white}
+            />
+            <Text style={styles.filteredSummaryContext} numberOfLines={1}>
+              {selectedCategory !== 'ALL'
+                ? selectedCategory
+                : selectedPaymentMethod !== 'ALL'
+                ? selectedPaymentMethod
+                : search.trim()
+                ? `"${search.trim()}"`
+                : 'All Filtered Entries'}
+            </Text>
+          </View>
+          <Text style={styles.filteredSummaryCount}>
+            {filteredTransactions.length} {filteredTransactions.length === 1 ? 'transaction' : 'transactions'}
+          </Text>
+        </View>
+
+        <View style={styles.filteredSummaryRight}>
+          <View style={styles.filteredSummaryCol}>
+            <Text style={styles.filteredSummaryLabel}>Total Outflow</Text>
+            <Text style={styles.filteredSummaryExpense}>
+              −{currencySymbol}
+              {filteredOutflow.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+            </Text>
+          </View>
+          {filteredInflow > 0 && (
+            <View style={styles.filteredSummaryCol}>
+              <Text style={styles.filteredSummaryLabel}>Inflow</Text>
+              <Text style={styles.filteredSummaryIncome}>
+                +{currencySymbol}
+                {filteredInflow.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
 
       {/* Transactions List */}
@@ -545,7 +732,97 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
             </TouchableOpacity>
           </View>
 
-          {selectedTx && (
+          {selectedTx && isEditing ? (
+            <View style={styles.modalBody}>
+              {/* Edit Amount */}
+              <Text style={styles.editInputLabel}>AMOUNT ({currencySymbol})</Text>
+              <View style={styles.editAmountRow}>
+                <Text style={styles.editCurrencyPrefix}>{currencySymbol}</Text>
+                <TextInput
+                  style={styles.editAmountInput}
+                  value={editAmount}
+                  onChangeText={setEditAmount}
+                  keyboardType="decimal-pad"
+                  placeholder="0.00"
+                  placeholderTextColor={Colors.textMuted}
+                />
+              </View>
+
+              {/* Edit Category */}
+              <Text style={styles.editInputLabel}>CATEGORY</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.editChipsRow}>
+                {CATEGORY_OPTIONS.filter((c) => c.id !== 'ALL').map((cat) => {
+                  const isSel = editCategory.toLowerCase() === cat.label.toLowerCase() || editCategory.toLowerCase() === cat.id.toLowerCase();
+                  return (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={[styles.editChip, isSel && styles.editChipActive]}
+                      onPress={() => setEditCategory(cat.label)}
+                    >
+                      <Ionicons name={cat.icon as any} size={12} color={isSel ? Colors.black : Colors.textMuted} />
+                      <Text style={[styles.editChipText, isSel && styles.editChipTextActive]}>{cat.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Edit Payment Method */}
+              <Text style={styles.editInputLabel}>PAYMENT METHOD</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.editChipsRow}>
+                {PAYMENT_METHOD_OPTIONS.filter((p) => p.id !== 'ALL').map((pm) => {
+                  const isSel = editPaymentMethod.toUpperCase() === pm.id;
+                  return (
+                    <TouchableOpacity
+                      key={pm.id}
+                      style={[styles.editChip, isSel && styles.editChipActive]}
+                      onPress={() => setEditPaymentMethod(pm.id)}
+                    >
+                      <Ionicons name={pm.icon as any} size={12} color={isSel ? Colors.black : Colors.textMuted} />
+                      <Text style={[styles.editChipText, isSel && styles.editChipTextActive]}>{pm.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Edit Description / Note */}
+              <Text style={styles.editInputLabel}>DESCRIPTION / NOTE</Text>
+              <TextInput
+                style={styles.editDescInput}
+                value={editDescription}
+                onChangeText={setEditDescription}
+                placeholder="Add a note or merchant name..."
+                placeholderTextColor={Colors.textMuted}
+              />
+
+              {/* Edit Action Buttons */}
+              <View style={styles.modalActionsRow}>
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setIsEditing(false)}
+                  disabled={savingEdit}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.modalCancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.modalSaveBtn}
+                  onPress={handleSaveEdit}
+                  disabled={savingEdit}
+                  activeOpacity={0.8}
+                >
+                  {savingEdit ? (
+                    <ActivityIndicator size="small" color={Colors.black} />
+                  ) : (
+                    <>
+                      <Ionicons name="checkmark" size={16} color={Colors.black} />
+                      <Text style={styles.modalSaveBtnText}>Save</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : selectedTx ? (
             <View style={styles.modalBody}>
               <View style={styles.heroAmountBox}>
                 <Text
@@ -612,6 +889,15 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  style={styles.modalEditBtn}
+                  onPress={handleStartEdit}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="pencil" size={15} color={Colors.white} />
+                  <Text style={styles.modalEditBtnText}>Edit</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   style={styles.modalDoneBtn}
                   onPress={() => setSelectedTx(null)}
                   activeOpacity={0.8}
@@ -620,7 +906,7 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
                 </TouchableOpacity>
               </View>
             </View>
-          )}
+          ) : null}
           </View>
         </View>
       </Modal>
@@ -1025,6 +1311,181 @@ const styles = StyleSheet.create({
   },
   categoryPillTextActive: {
     color: Colors.black,
+    fontWeight: '700',
+  },
+  pmFilterWrapper: {
+    marginBottom: 12,
+  },
+  filteredSummaryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 14,
+  },
+  filteredSummaryLeft: {
+    gap: 3,
+    flex: 1,
+  },
+  filteredSummaryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  filteredSummaryContext: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  filteredSummaryCount: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontWeight: '500',
+  },
+  filteredSummaryRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  filteredSummaryCol: {
+    alignItems: 'flex-end',
+  },
+  filteredSummaryLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+  },
+  filteredSummaryExpense: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: Colors.white,
+  },
+  filteredSummaryIncome: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#10B981',
+  },
+
+  // Edit Transaction Modal Styles
+  modalEditBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  modalEditBtnText: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  editInputLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: Colors.textMuted,
+    letterSpacing: 0.5,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  editAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  editCurrencyPrefix: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    marginRight: 6,
+  },
+  editAmountInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.white,
+    paddingVertical: 6,
+  },
+  editChipsRow: {
+    gap: 6,
+    paddingVertical: 4,
+  },
+  editChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  editChipActive: {
+    backgroundColor: Colors.white,
+    borderColor: Colors.white,
+  },
+  editChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  editChipTextActive: {
+    color: Colors.black,
+    fontWeight: '700',
+  },
+  editDescInput: {
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: Colors.white,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  modalCancelBtnText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalSaveBtn: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.white,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  modalSaveBtnText: {
+    color: Colors.black,
+    fontSize: 14,
     fontWeight: '700',
   },
 });
