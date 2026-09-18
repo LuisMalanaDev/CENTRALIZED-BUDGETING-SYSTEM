@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../constants/theme';
 import { api } from '../api/client';
-import { PaymentMethod, TransactionType } from '../types';
+import { CategoryBudget, PaymentMethod, TransactionType } from '../types';
 import { offlineStorage } from '../services/offlineStorage';
 
 interface QuickLogModalProps {
@@ -71,6 +71,28 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({
     type: 'success' | 'warning' | 'info';
     message: string;
   } | null>(null);
+  const [budgets, setBudgets] = useState<CategoryBudget[]>([]);
+
+  const currencySymbol = currency === 'PHP' ? '₱' : '$';
+
+  useEffect(() => {
+    if (visible) {
+      (async () => {
+        try {
+          const cached = await offlineStorage.getBudgetsCache();
+          if (cached?.budgets && cached.budgets.length > 0) {
+            setBudgets(cached.budgets);
+          }
+          const res = await api.get<{ budgets: CategoryBudget[] }>('/api/budgets').catch(() => null);
+          if (res?.budgets) {
+            setBudgets(res.budgets);
+          }
+        } catch {
+          // ignore
+        }
+      })();
+    }
+  }, [visible]);
 
   const categories = type === 'EXPENSE' ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
 
@@ -464,6 +486,91 @@ export const QuickLogModal: React.FC<QuickLogModalProps> = ({
                 autoFocus
               />
             </View>
+
+            {/* Live Budget Impact Warning (Expense only) */}
+            {(() => {
+              if (type !== 'EXPENSE') return null;
+              const activeBudget = budgets.find((b) => {
+                const bName = typeof b.category === 'string' ? b.category : b.category?.name || b.name || '';
+                return (
+                  bName.toLowerCase().trim() === category.toLowerCase().trim() ||
+                  bName.toLowerCase().includes(category.toLowerCase()) ||
+                  category.toLowerCase().includes(bName.toLowerCase())
+                );
+              });
+
+              if (!activeBudget) return null;
+              const cap = activeBudget.limit ?? activeBudget.amount ?? 0;
+              if (cap <= 0) return null;
+
+              const parsedAmt = parseFloat(amount.replace(/,/g, '')) || 0;
+              const current = activeBudget.spent || 0;
+              const projected = current + parsedAmt;
+              const isOver = current >= cap;
+              const willBeOver = !isOver && projected > cap;
+              const isPacingRisk = !isOver && !willBeOver && projected >= cap * 0.8;
+
+              return (
+                <View
+                  style={[
+                    styles.budgetImpactBox,
+                    (isOver || willBeOver)
+                      ? styles.budgetImpactDanger
+                      : isPacingRisk
+                      ? styles.budgetImpactWarning
+                      : styles.budgetImpactSafe,
+                  ]}
+                >
+                  <View style={styles.budgetImpactHeader}>
+                    <Ionicons
+                      name={
+                        isOver || willBeOver
+                          ? 'warning'
+                          : isPacingRisk
+                          ? 'alert-circle'
+                          : 'shield-checkmark'
+                      }
+                      size={14}
+                      color={
+                        isOver || willBeOver
+                          ? '#EF4444'
+                          : isPacingRisk
+                          ? '#F59E0B'
+                          : '#10B981'
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.budgetImpactTitle,
+                        (isOver || willBeOver)
+                          ? styles.budgetImpactTitleDanger
+                          : isPacingRisk
+                          ? styles.budgetImpactTitleWarning
+                          : styles.budgetImpactTitleSafe,
+                      ]}
+                    >
+                      {isOver
+                        ? `${category.toUpperCase()} BUDGET ALREADY EXCEEDED`
+                        : willBeOver
+                        ? `EXCEEDS ${category.toUpperCase()} BUDGET`
+                        : isPacingRisk
+                        ? `APPROACHING ${category.toUpperCase()} CAP`
+                        : `${category} Cap: ${currencySymbol}${Math.max(0, cap - projected).toLocaleString()} Left`}
+                    </Text>
+                  </View>
+
+                  {(isOver || willBeOver || isPacingRisk) && (
+                    <Text style={styles.budgetImpactMessage}>
+                      {isOver
+                        ? `Already spent ${currencySymbol}${current.toLocaleString()} of ${currencySymbol}${cap.toLocaleString()} cap.${parsedAmt > 0 ? ` Adding this increases overspend to +${currencySymbol}${(projected - cap).toLocaleString()}.` : ''}`
+                        : willBeOver
+                        ? `This ${currencySymbol}${parsedAmt.toLocaleString()} purchase pushes total ${category} spending to ${currencySymbol}${projected.toLocaleString()}, exceeding your ${currencySymbol}${cap.toLocaleString()} cap by +${currencySymbol}${(projected - cap).toLocaleString()}!`
+                        : `This leaves only ${currencySymbol}${(cap - projected).toLocaleString()} remaining in your ${currencySymbol}${cap.toLocaleString()} cap.`}
+                    </Text>
+                  )}
+                </View>
+              );
+            })()}
 
             {/* Category Chips */}
             <Text style={styles.sectionLabel}>Category</Text>
@@ -869,5 +976,49 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     flex: 1,
+  },
+  // Live Budget Impact Box
+  budgetImpactBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 16,
+    gap: 6,
+  },
+  budgetImpactDanger: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+  },
+  budgetImpactWarning: {
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+  },
+  budgetImpactSafe: {
+    backgroundColor: 'rgba(16, 185, 129, 0.06)',
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  budgetImpactHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  budgetImpactTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  budgetImpactTitleDanger: {
+    color: '#EF4444',
+  },
+  budgetImpactTitleWarning: {
+    color: '#F59E0B',
+  },
+  budgetImpactTitleSafe: {
+    color: '#10B981',
+  },
+  budgetImpactMessage: {
+    fontSize: 12,
+    color: '#CBD5E1',
+    lineHeight: 17,
   },
 });

@@ -390,8 +390,16 @@ export const BudgetsScreen: React.FC = () => {
           </View>
 
           {/* Summary Card */}
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>TOTAL MONTHLY BUDGET</Text>
+          <View style={[styles.summaryCard, totalSpent > totalBudget && totalBudget > 0 && styles.summaryCardOver]}>
+            <View style={styles.summaryTopRow}>
+              <Text style={styles.summaryLabel}>TOTAL MONTHLY BUDGET</Text>
+              {totalSpent > totalBudget && totalBudget > 0 && (
+                <View style={styles.summaryOverPill}>
+                  <Ionicons name="alert-circle" size={12} color="#EF4444" />
+                  <Text style={styles.summaryOverPillText}>BUDGET EXCEEDED</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.summaryValue}>
               {currencySymbol}
               {totalBudget.toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -401,12 +409,19 @@ export const BudgetsScreen: React.FC = () => {
                 Spent: {currencySymbol}
                 {totalSpent.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </Text>
-              <Text style={styles.summarySub}>
-                Remaining: {currencySymbol}
-                {Math.max(0, totalBudget - totalSpent).toLocaleString('en-US', {
-                  minimumFractionDigits: 2,
-                })}
-              </Text>
+              {totalSpent > totalBudget && totalBudget > 0 ? (
+                <Text style={[styles.summarySub, { color: '#EF4444', fontWeight: '700' }]}>
+                  Over by +{currencySymbol}
+                  {(totalSpent - totalBudget).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </Text>
+              ) : (
+                <Text style={styles.summarySub}>
+                  Remaining: {currencySymbol}
+                  {Math.max(0, totalBudget - totalSpent).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                  })}
+                </Text>
+              )}
             </View>
           </View>
 
@@ -430,20 +445,40 @@ export const BudgetsScreen: React.FC = () => {
             <View style={styles.cardsList}>
               {paginatedBudgets.map((b) => {
                 const capLimit = b.limit ?? b.amount ?? 0;
-                const percent = Math.min(100, Math.round(((b.spent || 0) / (capLimit || 1)) * 100));
+                const rawPercent = capLimit > 0 ? Math.round(((b.spent || 0) / capLimit) * 100) : 0;
+                const barWidth = Math.min(100, rawPercent);
+                const isOver = (b.spent || 0) > capLimit && capLimit > 0;
+                const overAmount = (b.spent || 0) - capLimit;
+                const remainingAmount = Math.max(0, capLimit - (b.spent || 0));
                 const catName = getCategoryName(b.category, b.name || 'Budget Cap');
+
                 return (
-                  <View key={b.id} style={styles.budgetCard}>
+                  <View key={b.id} style={[styles.budgetCard, isOver && styles.budgetCardOver]}>
                     <View style={styles.budgetTop}>
-                      <Text style={styles.budgetCat}>{catName}</Text>
+                      <View style={styles.budgetCatRow}>
+                        <Text style={styles.budgetCat}>{catName}</Text>
+                        {isOver ? (
+                          <View style={styles.overPill}>
+                            <Ionicons name="warning" size={11} color="#EF4444" />
+                            <Text style={styles.overPillText}>
+                              OVER BY {currencySymbol}{overAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </Text>
+                          </View>
+                        ) : rawPercent >= 80 ? (
+                          <View style={styles.warningPill}>
+                            <Text style={styles.warningPillText}>PACING RISK</Text>
+                          </View>
+                        ) : null}
+                      </View>
+
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                         <Text
                           style={[
                             styles.budgetPercent,
-                            percent >= 100 ? { color: '#F87171' } : percent >= 80 ? { color: '#FBBF24' } : null,
+                            isOver ? { color: '#EF4444' } : rawPercent >= 80 ? { color: '#FBBF24' } : null,
                           ]}
                         >
-                          {percent}%
+                          {rawPercent}%
                         </Text>
                         <TouchableOpacity
                           onPress={() => handleDeleteBudget(b.id, catName)}
@@ -460,22 +495,23 @@ export const BudgetsScreen: React.FC = () => {
                         style={[
                           styles.progressBar,
                           {
-                            width: `${percent}%`,
+                            width: `${barWidth}%`,
                             backgroundColor:
-                              percent >= 100 ? '#EF4444' : percent >= 80 ? '#F59E0B' : Colors.white,
+                              isOver ? '#EF4444' : rawPercent >= 80 ? '#F59E0B' : Colors.white,
                           },
                         ]}
                       />
                     </View>
 
                     <View style={styles.budgetBottom}>
-                      <Text style={styles.budgetSpent}>
+                      <Text style={[styles.budgetSpent, isOver && { color: '#EF4444', fontWeight: '700' }]}>
                         {currencySymbol}
                         {b.spent.toLocaleString()} spent
                       </Text>
-                      <Text style={styles.budgetLimit}>
-                        Cap: {currencySymbol}
-                        {capLimit.toLocaleString()}
+                      <Text style={[styles.budgetLimit, isOver && { color: '#F87171' }]}>
+                        {isOver
+                          ? `Exceeded Cap (${currencySymbol}${capLimit.toLocaleString()})`
+                          : `${currencySymbol}${remainingAmount.toLocaleString()} left • Cap: ${currencySymbol}${capLimit.toLocaleString()}`}
                       </Text>
                     </View>
                   </View>
@@ -1071,6 +1107,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
   },
+  summaryCardOver: {
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    backgroundColor: 'rgba(239, 68, 68, 0.04)',
+  },
+  summaryTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryOverPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  summaryOverPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#EF4444',
+  },
   cardsList: {
     gap: 10,
   },
@@ -1082,10 +1141,51 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 8,
   },
+  budgetCardOver: {
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+    backgroundColor: 'rgba(239, 68, 68, 0.04)',
+  },
   budgetTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  budgetCatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  overPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: '#EF4444',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  overPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#EF4444',
+    letterSpacing: 0.5,
+  },
+  warningPill: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    borderColor: '#F59E0B',
+    borderWidth: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  warningPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#F59E0B',
+    letterSpacing: 0.5,
   },
   vaultTitleRow: {
     flexDirection: 'row',
