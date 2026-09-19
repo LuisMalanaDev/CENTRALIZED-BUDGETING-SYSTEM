@@ -16,7 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { Colors } from '../constants/theme';
 import { api } from '../api/client';
 import { DateFilterBar } from '../components/DateFilterBar';
-import { DateRangeFilter, TrackerOrder } from '../types';
+import { DateRangeFilter, TrackerOrder, CategoryBudget } from '../types';
 import { offlineStorage } from '../services/offlineStorage';
 
 interface TrackerScreenProps {
@@ -30,6 +30,7 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
 }) => {
   const { user } = useAuth();
   const [orders, setOrders] = useState<TrackerOrder[]>([]);
+  const [budgets, setBudgets] = useState<CategoryBudget[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<TrackerOrder | null>(null);
@@ -52,10 +53,18 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
     let mounted = true;
     (async () => {
       try {
-        const cached = await offlineStorage.getTrackerCache();
-        if (cached && mounted && cached.orders?.length) {
-          setOrders(cached.orders);
-          setLoading(false);
+        const [cachedTracker, cachedBudgets] = await Promise.all([
+          offlineStorage.getTrackerCache(),
+          offlineStorage.getBudgetsCache(),
+        ]);
+        if (mounted) {
+          if (cachedTracker && cachedTracker.orders?.length) {
+            setOrders(cachedTracker.orders);
+            setLoading(false);
+          }
+          if (cachedBudgets && cachedBudgets.budgets?.length) {
+            setBudgets(cachedBudgets.budgets);
+          }
         }
       } catch (e) {
         console.warn('Tracker cache hydration error:', e);
@@ -81,10 +90,16 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
       if (filter.startDate && filter.endDate) {
         query = `?startDate=${filter.startDate}&endDate=${filter.endDate}`;
       }
-      // DO NOT catch with empty array. Let network error throw to preserve cache!
-      const res = await api.get<{ orders: TrackerOrder[] }>(`/api/tracker${query}`);
+      // Fetch tracked orders and budgets in parallel
+      const [res, budgetsRes] = await Promise.all([
+        api.get<{ orders: TrackerOrder[] }>(`/api/tracker${query}`),
+        api.get<{ budgets: CategoryBudget[] }>('/api/budgets').catch(() => null),
+      ]);
       const serverOrders = res.orders || [];
       setOrders(serverOrders);
+      if (budgetsRes?.budgets?.length) {
+        setBudgets(budgetsRes.budgets);
+      }
 
       if (serverOrders.length > 0) {
         offlineStorage.saveTrackerCache(serverOrders);
@@ -93,9 +108,15 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
       console.warn('Tracker fetch error (offline):', e?.message || e);
       // DEVICE IS OFFLINE: Restore and retain cached orders!
       try {
-        const cached = await offlineStorage.getTrackerCache();
-        if (cached && cached.orders?.length) {
-          setOrders(cached.orders);
+        const [cachedTracker, cachedBudgets] = await Promise.all([
+          offlineStorage.getTrackerCache(),
+          offlineStorage.getBudgetsCache(),
+        ]);
+        if (cachedTracker && cachedTracker.orders?.length) {
+          setOrders(cachedTracker.orders);
+        }
+        if (cachedBudgets && cachedBudgets.budgets?.length) {
+          setBudgets(cachedBudgets.budgets);
         }
       } catch (cacheErr) {
         console.warn('Tracker cache restore error:', cacheErr);
@@ -185,14 +206,8 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
     setIsEditing(true);
   };
 
-  const handleSaveEdit = async () => {
+  const performSaveEdit = async (num: number) => {
     if (!selectedOrder) return;
-    const num = parseFloat(editAmount.replace(/,/g, ''));
-    if (isNaN(num) || num <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid positive amount.');
-      return;
-    }
-
     setSavingEdit(true);
     try {
       const oldAmount = selectedOrder.amount;
@@ -245,6 +260,38 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
     } finally {
       setSavingEdit(false);
     }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedOrder) return;
+    const num = parseFloat(editAmount.replace(/,/g, ''));
+    if (isNaN(num) || num <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid positive amount.');
+      return;
+    }
+
+    // Budget exceeded warning check
+    if (onlineBudget && onlineBudgetCap > 0) {
+      const oldAmt = selectedOrder.amount || 0;
+      const projected = Math.max(0, activeOnlineSpend - oldAmt + num);
+      if (projected > onlineBudgetCap) {
+        Alert.alert(
+          '🚨 Budget Cap Exceeded',
+          `This updated amount (${currencySymbol}${num.toLocaleString('en-US', { minimumFractionDigits: 2 })}) pushes your online orders to ${currencySymbol}${projected.toLocaleString('en-US', { minimumFractionDigits: 2 })}, exceeding your ${currencySymbol}${onlineBudgetCap.toLocaleString('en-US', { minimumFractionDigits: 2 })} budget cap by +${currencySymbol}${(projected - onlineBudgetCap).toLocaleString('en-US', { minimumFractionDigits: 2 })}.\n\nDo you want to save anyway?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Save Anyway',
+              style: 'destructive',
+              onPress: () => performSaveEdit(num),
+            },
+          ]
+        );
+        return;
+      }
+    }
+
+    await performSaveEdit(num);
   };
 
   // Platform / Store Filter State
@@ -390,6 +437,30 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
       }));
   }, [filteredOrders, totalSpent]);
 
+  const onlineBudget = useMemo(() => {
+    return budgets.find((b) => {
+      const bName = (b.name || '').toLowerCase();
+      const catName = typeof b.category === 'string' ? b.category.toLowerCase() : (b.category?.name || '').toLowerCase();
+      const catSlug = typeof b.category === 'object' && b.category ? (b.category.slug || '').toLowerCase() : '';
+      return (
+        bName.includes('shopee') ||
+        bName.includes('online') ||
+        bName.includes('parcel') ||
+        catSlug.includes('shopee') ||
+        catSlug.includes('online') ||
+        catName.includes('shopee') ||
+        catName.includes('online')
+      );
+    });
+  }, [budgets]);
+
+  const onlineBudgetCap = onlineBudget ? Number(onlineBudget.amount || onlineBudget.limit || 0) : 0;
+  const onlineBudgetSpent = onlineBudget ? Number(onlineBudget.spent || 0) : 0;
+  const activeOnlineSpend = Math.max(totalSpent, onlineBudgetSpent);
+  const isBudgetExceeded = onlineBudgetCap > 0 && activeOnlineSpend > onlineBudgetCap;
+  const isBudgetNearCap = onlineBudgetCap > 0 && !isBudgetExceeded && activeOnlineSpend >= onlineBudgetCap * 0.8;
+  const budgetPercentUsed = onlineBudgetCap > 0 ? (activeOnlineSpend / onlineBudgetCap) * 100 : 0;
+
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE));
   const paginatedOrders = filteredOrders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -498,6 +569,59 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
                   </Text>
                 </View>
               ))}
+            </View>
+          </View>
+        )}
+
+        {/* Online Shopping Budget Cap & Exceeded Indicator */}
+        {onlineBudget && onlineBudgetCap > 0 && (
+          <View style={[styles.onlineBudgetBox, isBudgetExceeded && styles.onlineBudgetBoxExceeded]}>
+            <View style={styles.onlineBudgetHeader}>
+              <View style={styles.onlineBudgetLabelRow}>
+                <Ionicons
+                  name={isBudgetExceeded ? 'alert-circle' : isBudgetNearCap ? 'warning' : 'wallet-outline'}
+                  size={12}
+                  color={isBudgetExceeded ? '#EF4444' : isBudgetNearCap ? '#F59E0B' : Colors.textMuted}
+                />
+                <Text style={[styles.onlineBudgetLabel, isBudgetExceeded && styles.onlineBudgetLabelExceeded]}>
+                  {isBudgetExceeded
+                    ? 'ONLINE BUDGET EXCEEDED'
+                    : isBudgetNearCap
+                    ? 'APPROACHING BUDGET CAP'
+                    : 'ONLINE SHOPPING BUDGET CAP'}
+                </Text>
+              </View>
+              <Text style={[styles.onlineBudgetPercent, isBudgetExceeded && { color: '#EF4444' }, isBudgetNearCap && { color: '#F59E0B' }]}>
+                {Math.round(budgetPercentUsed)}% USED
+              </Text>
+            </View>
+
+            {/* Progress Bar */}
+            <View style={styles.onlineBudgetProgressTrack}>
+              <View
+                style={[
+                  styles.onlineBudgetProgressFill,
+                  {
+                    width: `${Math.min(100, Math.max(2, budgetPercentUsed))}%`,
+                    backgroundColor: isBudgetExceeded ? '#EF4444' : isBudgetNearCap ? '#F59E0B' : Colors.white,
+                  },
+                ]}
+              />
+            </View>
+
+            <View style={styles.onlineBudgetFooter}>
+              <Text style={styles.onlineBudgetSub}>
+                Cap: {currencySymbol}{onlineBudgetCap.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </Text>
+              {isBudgetExceeded ? (
+                <Text style={styles.onlineBudgetExceededSub}>
+                  Over by +{currencySymbol}{(activeOnlineSpend - onlineBudgetCap).toLocaleString('en-US', { minimumFractionDigits: 2 })}!
+                </Text>
+              ) : (
+                <Text style={styles.onlineBudgetSub}>
+                  {currencySymbol}{Math.max(0, onlineBudgetCap - activeOnlineSpend).toLocaleString('en-US', { minimumFractionDigits: 2 })} left
+                </Text>
+              )}
             </View>
           </View>
         )}
@@ -837,6 +961,59 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
                     placeholderTextColor={Colors.textMuted}
                   />
                 </View>
+
+                {/* Live Budget Impact Warning for Online Orders */}
+                {onlineBudget && onlineBudgetCap > 0 && (() => {
+                  const oldAmt = selectedOrder.amount || 0;
+                  const newAmt = parseFloat(editAmount.replace(/,/g, '')) || 0;
+                  const projectedSpend = Math.max(0, activeOnlineSpend - oldAmt + newAmt);
+                  const willExceed = projectedSpend > onlineBudgetCap;
+                  const isNear = !willExceed && projectedSpend >= onlineBudgetCap * 0.8;
+
+                  return (
+                    <View
+                      style={[
+                        styles.budgetImpactBox,
+                        willExceed
+                          ? styles.budgetImpactDanger
+                          : isNear
+                          ? styles.budgetImpactWarning
+                          : styles.budgetImpactSafe,
+                      ]}
+                    >
+                      <View style={styles.budgetImpactHeader}>
+                        <Ionicons
+                          name={willExceed ? 'warning' : isNear ? 'alert-circle' : 'shield-checkmark'}
+                          size={13}
+                          color={willExceed ? '#EF4444' : isNear ? '#F59E0B' : '#10B981'}
+                        />
+                        <Text
+                          style={[
+                            styles.budgetImpactTitle,
+                            willExceed
+                              ? styles.budgetImpactTitleDanger
+                              : isNear
+                              ? styles.budgetImpactTitleWarning
+                              : styles.budgetImpactTitleSafe,
+                          ]}
+                        >
+                          {willExceed
+                            ? 'EXCEEDS ONLINE BUDGET CAP'
+                            : isNear
+                            ? 'APPROACHING ONLINE BUDGET CAP'
+                            : `Online Cap: ${currencySymbol}${Math.max(0, onlineBudgetCap - projectedSpend).toLocaleString('en-US', { minimumFractionDigits: 2 })} Left`}
+                        </Text>
+                      </View>
+                      <Text style={styles.budgetImpactMessage}>
+                        {willExceed
+                          ? `This ${currencySymbol}${newAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })} order pushes online spend to ${currencySymbol}${projectedSpend.toLocaleString('en-US', { minimumFractionDigits: 2 })}, exceeding your ${currencySymbol}${onlineBudgetCap.toLocaleString('en-US', { minimumFractionDigits: 2 })} cap by +${currencySymbol}${(projectedSpend - onlineBudgetCap).toLocaleString('en-US', { minimumFractionDigits: 2 })}!`
+                          : isNear
+                          ? `This leaves only ${currencySymbol}${(onlineBudgetCap - projectedSpend).toLocaleString('en-US', { minimumFractionDigits: 2 })} remaining in your ${currencySymbol}${onlineBudgetCap.toLocaleString('en-US', { minimumFractionDigits: 2 })} online budget.`
+                          : `Projected spend: ${currencySymbol}${projectedSpend.toLocaleString('en-US', { minimumFractionDigits: 2 })} of ${currencySymbol}${onlineBudgetCap.toLocaleString('en-US', { minimumFractionDigits: 2 })} cap (${Math.round((projectedSpend / onlineBudgetCap) * 100)}%).`}
+                      </Text>
+                    </View>
+                  );
+                })()}
 
                 {/* Edit Item / Merchant Description */}
                 <Text style={styles.editInputLabel}>ITEM(S) / ORDER DESCRIPTION</Text>
@@ -1856,5 +2033,112 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: Colors.black,
+  },
+  // Online Shopping Budget Cap in Hero Card
+  onlineBudgetBox: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  onlineBudgetBoxExceeded: {
+    borderTopColor: 'rgba(239, 68, 68, 0.35)',
+  },
+  onlineBudgetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  onlineBudgetLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  onlineBudgetLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    letterSpacing: 0.6,
+  },
+  onlineBudgetLabelExceeded: {
+    color: '#EF4444',
+  },
+  onlineBudgetPercent: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: Colors.white,
+  },
+  onlineBudgetProgressTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  onlineBudgetProgressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  onlineBudgetFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  onlineBudgetSub: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  onlineBudgetExceededSub: {
+    fontSize: 11,
+    color: '#EF4444',
+    fontWeight: '700',
+  },
+
+  // Budget impact box in Edit Modal
+  budgetImpactBox: {
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  budgetImpactSafe: {
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+  },
+  budgetImpactWarning: {
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+  },
+  budgetImpactDanger: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  budgetImpactHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  budgetImpactTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  budgetImpactTitleSafe: {
+    color: '#10B981',
+  },
+  budgetImpactTitleWarning: {
+    color: '#F59E0B',
+  },
+  budgetImpactTitleDanger: {
+    color: '#EF4444',
+  },
+  budgetImpactMessage: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    lineHeight: 16,
   },
 });
