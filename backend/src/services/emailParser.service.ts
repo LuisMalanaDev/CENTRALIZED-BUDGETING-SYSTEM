@@ -89,13 +89,23 @@ export class EmailParserService {
       combined.match(/(?:Order\s*(?:ID|Number|No\.?|Ref\.?))\s*[:#]?\s*([A-Za-z0-9_-]{8,30})/i);
     const trackingNumber = orderIdMatch ? (orderIdMatch[1].startsWith('#') ? orderIdMatch[1] : `#${orderIdMatch[1]}`) : undefined;
 
+    // In Shopee receipts, the email contains:
+    // Price: ₱369.00
+    // Subtotal: ₱369.00
+    // Shopee Voucher Discount: ₱70.00
+    // Shipping Fee: ₱0.00
+    // Total Payment: ₱299.00
+    // We MUST match the net final "Total Payment" / "Amount Paid" / "Order Total",
+    // and explicitly avoid matching Subtotal or individual item prices!
     const amountMatch =
-      combined.match(/(?:Total\s*(?:Payment|Amount|Order Total|Price)|Amount\s*Paid|Total)\s*[:=]?\s*(?:₱|PHP|Php)?\s*([\d,]+\.?\d{0,2})/i) ||
-      combined.match(/(?:₱|PHP|Php)\s*([\d,]+\.?\d{0,2})/i);
+      combined.match(/(?:Total\s*Payment|Amount\s*Paid|Order\s*Total|Grand\s*Total|Total\s*Amount)\s*[:=]?\s*(?:₱|PHP|Php)?\s*([\d,]+\.?\d{0,2})/i) ||
+      combined.match(/(?<!sub)\btotal\s*[:=]?\s*(?:₱|PHP|Php)?\s*([\d,]+\.?\d{0,2})/i);
     const amount = amountMatch ? this.extractNumeric(amountMatch[1]) : 0;
 
     let description = 'Shopee Online Order';
     const itemMatch =
+      // 1. Matches Shopee item lists (e.g. "1. Top Fashion Korean Allwhite lowcut rubber shoes sneakers unisex design#1535#")
+      body.match(/(?:^|\n)\s*[0-9]+\.\s+([^\n\r]+?)(?:\s*(?:Variation|Qty|Quantity|Price|₱|\n|$))/i) ||
       body.match(/(?:Item\(s\)|Product|Order Details):\s*([^\n\r]+)/i) ||
       body.match(/1x\s*([^\n\r-]+)/i) ||
       subject.match(/Shopee:\s*(.+)/i);
@@ -124,7 +134,7 @@ export class EmailParserService {
 
     return {
       description,
-      amount: amount > 0 ? amount : 999.0,
+      amount,
       date,
       paymentMethod,
       source: 'Shopee (Email Sync)',
@@ -142,13 +152,13 @@ export class EmailParserService {
     const trackingNumber = orderIdMatch ? `#${orderIdMatch[1]}` : undefined;
 
     const amountMatch =
-      combined.match(/(?:Total\s*(?:Payment|Amount)?|Grand Total)\s*[:=]?\s*(?:₱|PHP|Php)?\s*([\d,]+\.?\d{0,2})/i) ||
-      combined.match(/(?:₱|PHP|Php)\s*([\d,]+\.?\d{0,2})/i);
+      combined.match(/(?:Total\s*Payment|Amount\s*Paid|Order\s*Total|Grand\s*Total|Total\s*Amount)\s*[:=]?\s*(?:₱|PHP|Php)?\s*([\d,]+\.?\d{0,2})/i) ||
+      combined.match(/(?<!sub)\btotal\s*[:=]?\s*(?:₱|PHP|Php)?\s*([\d,]+\.?\d{0,2})/i);
     const amount = amountMatch ? this.extractNumeric(amountMatch[1]) : 0;
 
     return {
       description: trackingNumber ? `Lazada Order ${trackingNumber}` : 'Lazada Online Order',
-      amount: amount > 0 ? amount : 500.0,
+      amount,
       date: emailDate || new Date().toISOString(),
       paymentMethod: combined.toLowerCase().includes('cod') ? 'CASH' : 'GCASH',
       source: 'Lazada (Email Sync)',
@@ -259,9 +269,9 @@ export class EmailParserService {
     }
 
     const amountMatch =
-      combined.match(/(?:Total|Amount)\s*[:=]?\s*(?:₱|PHP|Php|\$)?\s*([\d,]+\.?\d{0,2})/i) ||
-      combined.match(/(?:₱|PHP|Php|\$)\s*([\d,]+\.?\d{0,2})/i);
-    const amount = amountMatch ? this.extractNumeric(amountMatch[1]) : (orderId ? 70.0 : 0);
+      combined.match(/(?:Order\s*Total|Total\s*Payment|Total\s*Amount|Amount\s*Paid)\s*[:=]?\s*(?:₱|PHP|Php|\$)?\s*([\d,]+\.?\d{0,2})/i) ||
+      combined.match(/(?<!sub)\btotal\s*[:=]?\s*(?:₱|PHP|Php|\$)?\s*([\d,]+\.?\d{0,2})/i);
+    const amount = amountMatch ? this.extractNumeric(amountMatch[1]) : 0;
 
     if (amount <= 0) {
       return {

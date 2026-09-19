@@ -111,6 +111,33 @@ export async function webhookRoutes(fastify: FastifyInstance) {
         );
 
         if (existingTx) {
+          // If the order was previously recorded with an incorrect amount (e.g. Subtotal before vouchers),
+          // auto-update the transaction to the true final Total Payment!
+          if (parsed.amount > 0 && Number(existingTx.amount) !== parsed.amount) {
+            await dbSafe(
+              () =>
+                prisma.transaction.update({
+                  where: { id: existingTx.id },
+                  data: {
+                    amount: parsed.amount,
+                    description: parsed.description || existingTx.description,
+                  },
+                }),
+              () => {
+                existingTx.amount = parsed.amount;
+                if (parsed.description) existingTx.description = parsed.description;
+                return existingTx;
+              }
+            );
+
+            return reply.status(200).send({
+              success: true,
+              updated: true,
+              message: `Updated order ${parsed.orderTrackingNumber || existingTx.id} from ₱${existingTx.amount} to correct Total Payment ₱${parsed.amount}.`,
+              transaction: { ...existingTx, amount: parsed.amount },
+            });
+          }
+
           return reply.status(200).send({
             success: true,
             deduplicated: true,
