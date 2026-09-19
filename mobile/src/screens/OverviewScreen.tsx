@@ -128,7 +128,7 @@ export const OverviewScreen: React.FC<OverviewScreenProps> = ({
       // Build query string for active date range filter
       let query = '';
       if (filter.startDate && filter.endDate) {
-        query = `?startDate=${filter.startDate}&endDate=${filter.endDate}`;
+        query = `?startDate=${filter.startDate}&endDate=${filter.endDate}&limit=200`;
       }
 
       // DO NOT catch and return fake empty arrays for accounts & transactions.

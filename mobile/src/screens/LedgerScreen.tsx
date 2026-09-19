@@ -118,7 +118,7 @@ export const LedgerScreen: React.FC<LedgerScreenProps> = ({
     try {
       let query = '';
       if (filter.startDate && filter.endDate) {
-        query = `?startDate=${filter.startDate}&endDate=${filter.endDate}`;
+        query = `?startDate=${filter.startDate}&endDate=${filter.endDate}&limit=200`;
       }
       // DO NOT catch and return fake empty arrays! Let network error throw to preserve cache!
       const res = await api.get<{ transactions: Transaction[] }>(`/api/transactions${query}`);
