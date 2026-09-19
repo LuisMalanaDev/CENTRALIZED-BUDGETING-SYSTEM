@@ -35,6 +35,16 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
   const [selectedOrder, setSelectedOrder] = useState<TrackerOrder | null>(null);
   const [isScanning, setIsScanning] = useState(false);
 
+  // Edit Order State
+  const [isEditing, setIsEditing] = useState(false);
+  const [editAmount, setEditAmount] = useState('');
+  const [editItems, setEditItems] = useState('');
+  const [editStatus, setEditStatus] = useState<TrackerOrder['status']>('IN_TRANSIT');
+  const [editPaymentMethod, setEditPaymentMethod] = useState('GCASH');
+  const [editTrackingNumber, setEditTrackingNumber] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const currencySymbol = user?.currency === 'USD' ? '$' : '₱';
 
   // Instant Cache Hydration on startup (0.01s instant data rendering)
@@ -142,6 +152,98 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
       console.warn('Failed to delete order:', err);
       setOrders(previous);
       Alert.alert('Error', err?.message || 'Could not delete order. Please try again.');
+    }
+  };
+
+  const STATUS_OPTIONS: { id: TrackerOrder['status']; label: string; icon: string }[] = [
+    { id: 'PENDING', label: 'Pending', icon: 'hourglass-outline' },
+    { id: 'TO_SHIP', label: 'To Ship', icon: 'time-outline' },
+    { id: 'IN_TRANSIT', label: 'In Transit', icon: 'airplane-outline' },
+    { id: 'DELIVERED', label: 'Delivered', icon: 'checkmark-circle-outline' },
+    { id: 'COMPLETED', label: 'Completed', icon: 'shield-checkmark-outline' },
+    { id: 'CANCELLED', label: 'Cancelled', icon: 'close-circle-outline' },
+  ];
+
+  const PAYMENT_METHOD_OPTIONS = [
+    { id: 'COD', label: 'COD', icon: 'cash-outline' },
+    { id: 'GCASH', label: 'GCash', icon: 'wallet-outline' },
+    { id: 'MAYA', label: 'Maya', icon: 'card-outline' },
+    { id: 'SPAYLATER', label: 'SPayLater', icon: 'phone-portrait-outline' },
+    { id: 'CREDIT_CARD', label: 'Credit Card', icon: 'card-outline' },
+    { id: 'DEBIT_CARD', label: 'Debit Card', icon: 'card-outline' },
+    { id: 'CASH', label: 'Cash', icon: 'cash-outline' },
+  ];
+
+  const handleStartEdit = () => {
+    if (!selectedOrder) return;
+    setEditAmount(String(selectedOrder.amount || ''));
+    setEditItems(selectedOrder.items || selectedOrder.merchant || '');
+    setEditStatus(selectedOrder.status || 'IN_TRANSIT');
+    setEditPaymentMethod(selectedOrder.paymentMethod || 'GCASH');
+    setEditTrackingNumber(selectedOrder.trackingNumber || selectedOrder.orderId || '');
+    setEditNotes(selectedOrder.notes || '');
+    setIsEditing(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedOrder) return;
+    const num = parseFloat(editAmount.replace(/,/g, ''));
+    if (isNaN(num) || num <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid positive amount.');
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const oldAmount = selectedOrder.amount;
+      const updatedOrderData: TrackerOrder = {
+        ...selectedOrder,
+        amount: num,
+        items: editItems.trim() || selectedOrder.items || selectedOrder.merchant || 'Package',
+        merchant: editItems.trim() || selectedOrder.merchant || 'Package',
+        status: editStatus,
+        paymentMethod: editPaymentMethod,
+        trackingNumber: editTrackingNumber.trim() || undefined,
+        orderId: editTrackingNumber.trim() || selectedOrder.orderId,
+        notes: editNotes.trim() || undefined,
+      };
+
+      // 1. Send update to Backend API
+      await api.put(`/api/tracker/${selectedOrder.id}`, {
+        amount: num,
+        items: editItems.trim() || selectedOrder.items || selectedOrder.merchant || 'Package',
+        status: editStatus,
+        paymentMethod: editPaymentMethod,
+        trackingNumber: editTrackingNumber.trim() || undefined,
+        notes: editNotes.trim() || undefined,
+      });
+
+      // 2. Update local state immediately
+      const updatedOrders = orders.map((o) =>
+        o.id === selectedOrder.id ? updatedOrderData : o
+      );
+      setOrders(updatedOrders);
+
+      // 3. Update offline caches immediately
+      await offlineStorage.saveTrackerCache(updatedOrders);
+      await offlineStorage.updateTransactionInOverviewCache(
+        selectedOrder.id,
+        oldAmount,
+        num,
+        'EXPENSE',
+        editPaymentMethod,
+        updatedOrderData.items
+      );
+
+      // 4. Update selectedOrder in modal and exit edit mode
+      setSelectedOrder(updatedOrderData);
+      setIsEditing(false);
+      Alert.alert('Saved', 'Order details have been successfully updated.');
+    } catch (err: any) {
+      console.warn('Failed to update order:', err);
+      Alert.alert('Update Failed', err?.message || 'Could not update order. Please try again.');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -672,7 +774,13 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
       visible={!!selectedOrder}
       transparent
       animationType="fade"
-      onRequestClose={() => setSelectedOrder(null)}
+      onRequestClose={() => {
+        if (isEditing) {
+          setIsEditing(false);
+        } else {
+          setSelectedOrder(null);
+        }
+      }}
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalCard}>
@@ -680,7 +788,9 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
             <View style={styles.modalHeaderLeft}>
               <Ionicons
                 name={
-                  selectedOrder?.platform === 'GROCERY'
+                  isEditing
+                    ? 'create-outline'
+                    : selectedOrder?.platform === 'GROCERY'
                     ? 'basket'
                     : selectedOrder?.platform === 'GOOGLE_PLAY'
                     ? 'logo-google-playstore'
@@ -693,14 +803,137 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
                 size={20}
                 color={Colors.white}
               />
-              <Text style={styles.modalTitle}>Receipt & Order Details</Text>
+              <Text style={styles.modalTitle}>
+                {isEditing ? 'Edit Tracked Order' : 'Receipt & Order Details'}
+              </Text>
             </View>
-            <TouchableOpacity onPress={() => setSelectedOrder(null)} style={styles.modalCloseBtn}>
+            <TouchableOpacity
+              onPress={() => {
+                if (isEditing) {
+                  setIsEditing(false);
+                } else {
+                  setSelectedOrder(null);
+                }
+              }}
+              style={styles.modalCloseBtn}
+            >
               <Ionicons name="close" size={20} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
-          {selectedOrder && (
+          {selectedOrder && isEditing ? (
+            <ScrollView style={styles.editModalScroll} showsVerticalScrollIndicator={false}>
+              <View style={styles.modalBody}>
+                {/* Edit Amount */}
+                <Text style={styles.editInputLabel}>TOTAL AMOUNT ({currencySymbol})</Text>
+                <View style={styles.editAmountRow}>
+                  <Text style={styles.editCurrencyPrefix}>{currencySymbol}</Text>
+                  <TextInput
+                    style={styles.editAmountInput}
+                    value={editAmount}
+                    onChangeText={setEditAmount}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                    placeholderTextColor={Colors.textMuted}
+                  />
+                </View>
+
+                {/* Edit Item / Merchant Description */}
+                <Text style={styles.editInputLabel}>ITEM(S) / ORDER DESCRIPTION</Text>
+                <TextInput
+                  style={styles.editDescInput}
+                  value={editItems}
+                  onChangeText={setEditItems}
+                  placeholder="e.g. Shoes, Sneakers, Mouse..."
+                  placeholderTextColor={Colors.textMuted}
+                />
+
+                {/* Edit Status */}
+                <Text style={styles.editInputLabel}>ORDER STATUS</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.editChipsRow}>
+                  {STATUS_OPTIONS.map((st) => {
+                    const isSel = editStatus === st.id;
+                    return (
+                      <TouchableOpacity
+                        key={st.id}
+                        style={[styles.editChip, isSel && styles.editChipActive]}
+                        onPress={() => setEditStatus(st.id)}
+                      >
+                        <Ionicons name={st.icon as any} size={12} color={isSel ? Colors.black : Colors.textMuted} />
+                        <Text style={[styles.editChipText, isSel && styles.editChipTextActive]}>{st.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Edit Payment Method */}
+                <Text style={styles.editInputLabel}>PAYMENT METHOD</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.editChipsRow}>
+                  {PAYMENT_METHOD_OPTIONS.map((pm) => {
+                    const isSel = editPaymentMethod.toUpperCase() === pm.id;
+                    return (
+                      <TouchableOpacity
+                        key={pm.id}
+                        style={[styles.editChip, isSel && styles.editChipActive]}
+                        onPress={() => setEditPaymentMethod(pm.id)}
+                      >
+                        <Ionicons name={pm.icon as any} size={12} color={isSel ? Colors.black : Colors.textMuted} />
+                        <Text style={[styles.editChipText, isSel && styles.editChipTextActive]}>{pm.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Edit Tracking / Order Number */}
+                <Text style={styles.editInputLabel}>TRACKING / ORDER NUMBER</Text>
+                <TextInput
+                  style={styles.editDescInput}
+                  value={editTrackingNumber}
+                  onChangeText={setEditTrackingNumber}
+                  placeholder="e.g. 260919E3SVERB3..."
+                  placeholderTextColor={Colors.textMuted}
+                />
+
+                {/* Edit Notes */}
+                <Text style={styles.editInputLabel}>NOTES</Text>
+                <TextInput
+                  style={styles.editDescInput}
+                  value={editNotes}
+                  onChangeText={setEditNotes}
+                  placeholder="Add optional notes..."
+                  placeholderTextColor={Colors.textMuted}
+                />
+
+                {/* Edit Action Buttons */}
+                <View style={styles.modalActionsRow}>
+                  <TouchableOpacity
+                    style={styles.modalCancelBtn}
+                    onPress={() => setIsEditing(false)}
+                    disabled={savingEdit}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.modalCancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.modalSaveBtn}
+                    onPress={handleSaveEdit}
+                    disabled={savingEdit}
+                    activeOpacity={0.8}
+                  >
+                    {savingEdit ? (
+                      <ActivityIndicator size="small" color={Colors.black} />
+                    ) : (
+                      <>
+                        <Ionicons name="checkmark" size={16} color={Colors.black} />
+                        <Text style={styles.modalSaveBtnText}>Save</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          ) : selectedOrder ? (
             <View style={styles.modalBody}>
               <View style={styles.heroAmountBox}>
                 <Text style={styles.heroAmountText}>
@@ -782,6 +1015,15 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
                 </TouchableOpacity>
 
                 <TouchableOpacity
+                  style={styles.modalEditBtn}
+                  onPress={handleStartEdit}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="pencil" size={15} color={Colors.white} />
+                  <Text style={styles.modalEditBtnText}>Edit</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
                   style={styles.modalDoneBtn}
                   onPress={() => setSelectedOrder(null)}
                   activeOpacity={0.8}
@@ -790,7 +1032,7 @@ export const TrackerScreen: React.FC<TrackerScreenProps> = ({
                 </TouchableOpacity>
               </View>
             </View>
-          )}
+          ) : null}
           </View>
         </View>
       </Modal>
@@ -1207,8 +1449,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: Colors.border,
-    padding: 22,
+    padding: 20,
     maxWidth: 400,
+    maxHeight: '90%',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1330,13 +1573,131 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   modalDoneBtn: {
-    flex: 2,
+    flex: 1,
     backgroundColor: Colors.white,
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
   },
   modalDoneBtnText: {
+    color: Colors.black,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalEditBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  modalEditBtnText: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  editModalScroll: {
+    maxHeight: 460,
+  },
+  editInputLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: Colors.textMuted,
+    letterSpacing: 0.5,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  editAmountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  editCurrencyPrefix: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    marginRight: 6,
+  },
+  editAmountInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.white,
+    paddingVertical: 6,
+  },
+  editChipsRow: {
+    gap: 6,
+    paddingVertical: 4,
+  },
+  editChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  editChipActive: {
+    backgroundColor: Colors.white,
+    borderColor: Colors.white,
+  },
+  editChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  editChipTextActive: {
+    color: Colors.black,
+    fontWeight: '700',
+  },
+  editDescInput: {
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: Colors.white,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  modalCancelBtnText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  modalSaveBtn: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Colors.white,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  modalSaveBtnText: {
     color: Colors.black,
     fontSize: 14,
     fontWeight: '700',

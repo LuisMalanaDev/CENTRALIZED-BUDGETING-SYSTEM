@@ -72,7 +72,11 @@ export async function trackerRoutes(fastify: FastifyInstance) {
           else if (lower.includes('roblox') || lower.includes('robux')) platform = 'ROBLOX';
 
           let status: 'PENDING' | 'TO_SHIP' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED' | 'COMPLETED' = 'IN_TRANSIT';
-          if (platform === 'GOOGLE_PLAY' || platform === 'ROBLOX' || platform === 'FOODPANDA') {
+          const validStatuses = ['PENDING', 'TO_SHIP', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED', 'COMPLETED'];
+          const matchedTag = (t.tags || []).find((tag) => validStatuses.includes(tag.toUpperCase()));
+          if (matchedTag) {
+            status = matchedTag.toUpperCase() as any;
+          } else if (platform === 'GOOGLE_PLAY' || platform === 'ROBLOX' || platform === 'FOODPANDA') {
             status = 'DELIVERED';
           }
 
@@ -132,7 +136,11 @@ export async function trackerRoutes(fastify: FastifyInstance) {
           else if (lower.includes('roblox') || lower.includes('robux')) platform = 'ROBLOX';
 
           let status: any = 'IN_TRANSIT';
-          if (platform === 'GOOGLE_PLAY' || platform === 'ROBLOX' || platform === 'FOODPANDA') {
+          const validStatuses = ['PENDING', 'TO_SHIP', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED', 'COMPLETED'];
+          const matchedTag = (t.tags || []).find((tag) => validStatuses.includes(tag.toUpperCase()));
+          if (matchedTag) {
+            status = matchedTag.toUpperCase();
+          } else if (platform === 'GOOGLE_PLAY' || platform === 'ROBLOX' || platform === 'FOODPANDA') {
             status = 'DELIVERED';
           }
 
@@ -206,6 +214,49 @@ export async function trackerRoutes(fastify: FastifyInstance) {
     );
 
     return reply.status(201).send({ success: true, transaction });
+  });
+
+  // Update tracked parcel order
+  fastify.put('/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as any;
+
+    try {
+      const updateData: any = {};
+      if (body.amount !== undefined) updateData.amount = Number(body.amount);
+      if (body.items !== undefined || body.merchant !== undefined) {
+        updateData.description = (body.items || body.merchant).trim();
+      }
+      if (body.notes !== undefined) updateData.notes = body.notes;
+      if (body.paymentMethod !== undefined) {
+        const pm = String(body.paymentMethod).toUpperCase().replace(/\s+/g, '_');
+        if (['GCASH', 'MAYA', 'CREDIT_CARD', 'DEBIT_CARD', 'CASH', 'BANK_TRANSFER'].includes(pm)) {
+          updateData.paymentMethod = pm;
+        } else if (pm === 'COD') {
+          updateData.paymentMethod = 'CASH';
+        } else {
+          updateData.paymentMethod = 'OTHER';
+        }
+      }
+      if (body.trackingNumber !== undefined || body.orderId !== undefined) {
+        updateData.orderTrackingNumber = body.trackingNumber || body.orderId;
+      }
+      if (body.status !== undefined) {
+        const validStatuses = ['PENDING', 'TO_SHIP', 'IN_TRANSIT', 'DELIVERED', 'CANCELLED', 'COMPLETED'];
+        const existing = await prisma.transaction.findFirst({ where: { id, userId: request.user.userId } }).catch(() => null);
+        if (existing) {
+          const oldTags = (existing.tags || []).filter(
+            (t) => !validStatuses.includes(t.toUpperCase())
+          );
+          updateData.tags = [...oldTags, body.status.toUpperCase()];
+        }
+      }
+
+      const updated = await TransactionService.updateTransaction(request.user.userId, id, updateData);
+      return reply.send({ success: true, transaction: updated });
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message || 'Failed to update order' });
+    }
   });
 
   // Delete tracked parcel order
