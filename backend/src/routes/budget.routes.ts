@@ -9,6 +9,8 @@ const createBudgetSchema = z.object({
   amount: z.number().positive(),
   categoryId: z.string().nullable().optional(),
   period: z.enum(['MONTHLY', 'WEEKLY', 'YEARLY']).optional(),
+  month: z.number().int().min(1).max(12).nullable().optional(),
+  year: z.number().int().min(2020).max(2100).nullable().optional(),
 });
 
 export async function budgetRoutes(fastify: FastifyInstance) {
@@ -32,6 +34,8 @@ export async function budgetRoutes(fastify: FastifyInstance) {
       amount: parsed.data.amount,
       categoryId: parsed.data.categoryId,
       period: parsed.data.period as BudgetPeriod,
+      month: parsed.data.month,
+      year: parsed.data.year,
     });
 
     return reply.status(201).send({ budget });

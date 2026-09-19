@@ -75,6 +75,8 @@ export class BudgetService {
             categoryId: b.categoryId,
             category: b.category,
             period: b.period,
+            month: b.month ?? null,
+            year: b.year ?? null,
             spent: Math.round(spent * 100) / 100,
             remaining: Math.round(remaining * 100) / 100,
             percentUsed,
@@ -121,6 +123,8 @@ export class BudgetService {
             categoryId: b.categoryId,
             category: category ? { id: category.id, name: category.name, slug: category.slug, color: category.color, icon: category.icon } : null,
             period: b.period,
+            month: (b as any).month ?? null,
+            year: (b as any).year ?? null,
             spent: Math.round(spent * 100) / 100,
             remaining: Math.round(remaining * 100) / 100,
             percentUsed,
@@ -141,26 +145,55 @@ export class BudgetService {
     amount: number;
     categoryId?: string | null;
     period?: BudgetPeriod;
+    month?: number | null;
+    year?: number | null;
   }) {
     return dbSafe(
-      () => prisma.budget.create({
-        data: {
-          userId,
-          name: data.name,
-          amount: new Prisma.Decimal(data.amount),
-          categoryId: data.categoryId || null,
-          period: data.period || 'MONTHLY',
-        },
-        include: { category: true },
-      }),
+      async () => {
+        const existing = await prisma.budget.findFirst({
+          where: {
+            userId,
+            categoryId: data.categoryId || null,
+            month: data.month ?? null,
+            year: data.year ?? null,
+          },
+        });
+
+        if (existing) {
+          return prisma.budget.update({
+            where: { id: existing.id },
+            data: {
+              name: data.name,
+              amount: new Prisma.Decimal(data.amount),
+              period: data.period || 'MONTHLY',
+            },
+            include: { category: true },
+          });
+        }
+
+        return prisma.budget.create({
+          data: {
+            userId,
+            name: data.name,
+            amount: new Prisma.Decimal(data.amount),
+            categoryId: data.categoryId || null,
+            period: data.period || 'MONTHLY',
+            month: data.month ?? null,
+            year: data.year ?? null,
+          },
+          include: { category: true },
+        });
+      },
       () => {
-        const newBudget: MockBudget = {
+        const newBudget: any = {
           id: `bud-${Date.now()}`,
           userId,
           name: data.name,
           amount: data.amount,
           categoryId: data.categoryId,
           period: data.period || 'MONTHLY',
+          month: data.month ?? null,
+          year: data.year ?? null,
           createdAt: new Date(),
           updatedAt: new Date(),
         };
@@ -175,6 +208,8 @@ export class BudgetService {
     amount?: number;
     categoryId?: string | null;
     period?: BudgetPeriod;
+    month?: number | null;
+    year?: number | null;
   }) {
     return dbSafe(
       async () => {
@@ -190,6 +225,8 @@ export class BudgetService {
             ...(data.amount !== undefined && { amount: new Prisma.Decimal(data.amount) }),
             ...(data.categoryId !== undefined && { categoryId: data.categoryId }),
             ...(data.period && { period: data.period }),
+            ...(data.month !== undefined && { month: data.month }),
+            ...(data.year !== undefined && { year: data.year }),
           },
           include: { category: true },
         });
@@ -200,6 +237,8 @@ export class BudgetService {
         if (data.name) b.name = data.name;
         if (data.amount !== undefined) b.amount = data.amount;
         if (data.categoryId !== undefined) b.categoryId = data.categoryId;
+        if (data.month !== undefined) (b as any).month = data.month;
+        if (data.year !== undefined) (b as any).year = data.year;
         return b as any;
       }
     );

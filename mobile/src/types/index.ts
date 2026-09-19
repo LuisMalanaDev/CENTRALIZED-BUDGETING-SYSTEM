@@ -50,6 +50,8 @@ export interface CategoryBudget {
   amount?: number;
   spent: number;
   period: string;
+  month?: number | null;
+  year?: number | null;
 }
 
 export interface SavingsVault {

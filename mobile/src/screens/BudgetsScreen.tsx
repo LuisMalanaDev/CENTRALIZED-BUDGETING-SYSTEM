@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -28,6 +28,18 @@ const BUDGET_CATEGORIES = [
   { name: 'Entertainment', icon: 'game-controller-outline' },
   { name: 'Personal Care', icon: 'heart-outline' },
   { name: 'Other Expense', icon: 'ellipsis-horizontal-outline' },
+];
+
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
+const DURATION_OPTIONS = [
+  { id: '1_MONTH', label: '1 Month', months: 1 },
+  { id: '2_MONTHS', label: '2 Months', months: 2 },
+  { id: '3_MONTHS', label: '3 Months', months: 3 },
+  { id: 'ONGOING', label: 'Every Month (Ongoing)', months: 0 },
 ];
 
 const VAULT_ICONS = [
@@ -116,9 +128,33 @@ export const BudgetsScreen: React.FC = () => {
 
   // Budget Modal State
   const [budgetModalVisible, setBudgetModalVisible] = useState(false);
+  const [editingBudget, setEditingBudget] = useState<CategoryBudget | null>(null);
   const [selectedCategory, setSelectedCategory] = useState(BUDGET_CATEGORIES[0].name);
   const [budgetAmountInput, setBudgetAmountInput] = useState('');
   const [savingBudget, setSavingBudget] = useState(false);
+
+  // Month & Duration options
+  const now = useMemo(() => new Date(), []);
+  const currentMonthIdx = now.getMonth(); // 0-11
+  const currentYear = now.getFullYear();
+
+  const MONTH_OPTIONS = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(currentYear, currentMonthIdx + i, 1);
+      const m = d.getMonth() + 1; // 1-12
+      const y = d.getFullYear();
+      const label = `${MONTH_NAMES[d.getMonth()]} ${y}`;
+      return { month: m, year: y, label, isCurrent: i === 0 };
+    });
+  }, [currentMonthIdx, currentYear]);
+
+  const [selectedMonth, setSelectedMonth] = useState<{ month: number; year: number; label: string; isCurrent: boolean }>(() => {
+    const d = new Date();
+    const m = d.getMonth() + 1;
+    const y = d.getFullYear();
+    return { month: m, year: y, label: `${MONTH_NAMES[d.getMonth()]} ${y}`, isCurrent: true };
+  });
+  const [selectedDuration, setSelectedDuration] = useState<string>('1_MONTH');
 
   // Vault Modal State
   const [vaultModalVisible, setVaultModalVisible] = useState(false);
@@ -206,6 +242,44 @@ export const BudgetsScreen: React.FC = () => {
     fetchData();
   };
 
+  const handleOpenCreateBudget = () => {
+    setEditingBudget(null);
+    setSelectedCategory(BUDGET_CATEGORIES[0].name);
+    setBudgetAmountInput('');
+    setSelectedMonth(MONTH_OPTIONS[0]);
+    setSelectedDuration('1_MONTH');
+    setBudgetModalVisible(true);
+  };
+
+  const handleStartEditBudget = (budget: CategoryBudget) => {
+    setEditingBudget(budget);
+    const catName = typeof budget.category === 'string'
+      ? budget.category
+      : budget.category?.name || budget.name || BUDGET_CATEGORIES[0].name;
+    const matchedCategory = BUDGET_CATEGORIES.find((c) => catName.toLowerCase().includes(c.name.toLowerCase()));
+    setSelectedCategory(matchedCategory ? matchedCategory.name : catName);
+    setBudgetAmountInput(String(budget.amount || budget.limit || ''));
+
+    if (budget.month && budget.year) {
+      const match = MONTH_OPTIONS.find((o) => o.month === budget.month && o.year === budget.year);
+      if (match) {
+        setSelectedMonth(match);
+      } else {
+        setSelectedMonth({
+          month: budget.month,
+          year: budget.year,
+          label: `${MONTH_NAMES[budget.month - 1]} ${budget.year}`,
+          isCurrent: false,
+        });
+      }
+      setSelectedDuration('1_MONTH');
+    } else {
+      setSelectedMonth(MONTH_OPTIONS[0]);
+      setSelectedDuration('ONGOING');
+    }
+    setBudgetModalVisible(true);
+  };
+
   const handleSaveBudget = async () => {
     const amt = parseFloat(budgetAmountInput.replace(/,/g, ''));
     if (isNaN(amt) || amt <= 0) {
@@ -215,13 +289,58 @@ export const BudgetsScreen: React.FC = () => {
 
     setSavingBudget(true);
     try {
-      await api.post('/api/budgets', {
-        name: selectedCategory,
-        amount: amt,
-        period: 'MONTHLY',
-      });
+      const isOngoing = selectedDuration === 'ONGOING';
+      const dur = DURATION_OPTIONS.find((d) => d.id === selectedDuration);
+      const count = dur && dur.months > 0 ? dur.months : 1;
+
+      if (editingBudget) {
+        // Update existing budget
+        await api.put(`/api/budgets/${editingBudget.id}`, {
+          name: selectedCategory,
+          amount: amt,
+          period: 'MONTHLY',
+          month: isOngoing ? null : selectedMonth.month,
+          year: isOngoing ? null : selectedMonth.year,
+        });
+        Alert.alert('Success', `Budget cap for ${selectedCategory} updated successfully.`);
+      } else {
+        // Create new budget
+        if (isOngoing) {
+          await api.post('/api/budgets', {
+            name: selectedCategory,
+            amount: amt,
+            period: 'MONTHLY',
+            month: null,
+            year: null,
+          });
+          Alert.alert('Budget Set', `Set ongoing monthly budget of ${currencySymbol}${amt.toLocaleString()} for ${selectedCategory}.`);
+        } else {
+          // If 1 month or 2 months or 3 months, create for each month in the selected range!
+          for (let i = 0; i < count; i++) {
+            const d = new Date(selectedMonth.year, selectedMonth.month - 1 + i, 1);
+            const m = d.getMonth() + 1;
+            const y = d.getFullYear();
+            const monthLabel = `${MONTH_NAMES[d.getMonth()]} ${y}`;
+            const labelSuffix = count > 1 ? ` (${monthLabel})` : '';
+            await api.post('/api/budgets', {
+              name: `${selectedCategory}${labelSuffix}`,
+              amount: amt,
+              period: 'MONTHLY',
+              month: m,
+              year: y,
+            });
+          }
+          Alert.alert(
+            'Budget Set',
+            count === 1
+              ? `Set ${selectedMonth.label} budget of ${currencySymbol}${amt.toLocaleString()} for ${selectedCategory}.`
+              : `Set ${count}-month budget of ${currencySymbol}${amt.toLocaleString()}/mo for ${selectedCategory} starting ${selectedMonth.label}.`
+          );
+        }
+      }
       setBudgetModalVisible(false);
       setBudgetAmountInput('');
+      setEditingBudget(null);
       fetchData();
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save budget cap');
@@ -381,7 +500,7 @@ export const BudgetsScreen: React.FC = () => {
             <Text style={styles.sectionHeading}>Category Budget Caps</Text>
             <TouchableOpacity
               style={styles.addPrimaryBtn}
-              onPress={() => setBudgetModalVisible(true)}
+              onPress={handleOpenCreateBudget}
               activeOpacity={0.8}
             >
               <Ionicons name="add" size={15} color={Colors.black} />
@@ -434,7 +553,7 @@ export const BudgetsScreen: React.FC = () => {
               </Text>
               <TouchableOpacity
                 style={[styles.addPrimaryBtn, { marginTop: 14 }]}
-                onPress={() => setBudgetModalVisible(true)}
+                onPress={handleOpenCreateBudget}
                 activeOpacity={0.8}
               >
                 <Ionicons name="add" size={16} color={Colors.black} />
@@ -457,6 +576,17 @@ export const BudgetsScreen: React.FC = () => {
                     <View style={styles.budgetTop}>
                       <View style={styles.budgetCatRow}>
                         <Text style={styles.budgetCat}>{catName}</Text>
+                        
+                        {/* Month / Period Badge */}
+                        <View style={styles.budgetMonthBadge}>
+                          <Ionicons name="calendar-outline" size={10} color="#38BDF8" />
+                          <Text style={styles.budgetMonthBadgeText}>
+                            {b.month && b.year
+                              ? `${MONTH_NAMES[b.month - 1] || ''} ${b.year}`
+                              : 'Ongoing Monthly'}
+                          </Text>
+                        </View>
+
                         {isOver ? (
                           <View style={styles.overPill}>
                             <Ionicons name="warning" size={11} color="#EF4444" />
@@ -480,6 +610,12 @@ export const BudgetsScreen: React.FC = () => {
                         >
                           {rawPercent}%
                         </Text>
+                        <TouchableOpacity
+                          onPress={() => handleStartEditBudget(b)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons name="pencil-outline" size={15} color={Colors.white} />
+                        </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() => handleDeleteBudget(b.id, catName)}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -799,18 +935,33 @@ export const BudgetsScreen: React.FC = () => {
         </View>
       )}
 
-      {/* Set Category Budget Cap Modal */}
+      {/* Set / Edit Category Budget Cap Modal */}
       <Modal
         visible={budgetModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setBudgetModalVisible(false)}
+        onRequestClose={() => {
+          setBudgetModalVisible(false);
+          setEditingBudget(null);
+        }}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <ScrollView
+            contentContainerStyle={styles.modalContent}
+            style={{ maxHeight: '90%' }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Set Category Budget Cap</Text>
-              <TouchableOpacity onPress={() => setBudgetModalVisible(false)}>
+              <Text style={styles.modalTitle}>
+                {editingBudget ? 'Edit Budget Cap' : 'Set Category Budget Cap'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setBudgetModalVisible(false);
+                  setEditingBudget(null);
+                }}
+              >
                 <Ionicons name="close" size={22} color={Colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -838,7 +989,7 @@ export const BudgetsScreen: React.FC = () => {
               })}
             </ScrollView>
 
-            <Text style={styles.modalLabel}>Monthly Spending Limit ({currencySymbol})</Text>
+            <Text style={styles.modalLabel}>Spending Limit ({currencySymbol})</Text>
             <TextInput
               style={styles.modalInput}
               placeholder="e.g. 5000"
@@ -846,8 +997,54 @@ export const BudgetsScreen: React.FC = () => {
               keyboardType="decimal-pad"
               value={budgetAmountInput}
               onChangeText={setBudgetAmountInput}
-              autoFocus
+              autoFocus={!editingBudget}
             />
+
+            {/* Which Month? */}
+            <Text style={styles.modalLabel}>Which Month?</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.monthChipsRow}>
+              {MONTH_OPTIONS.map((opt) => {
+                const isSelected = selectedMonth.month === opt.month && selectedMonth.year === opt.year;
+                return (
+                  <TouchableOpacity
+                    key={`${opt.year}-${opt.month}`}
+                    style={[styles.monthChip, isSelected && styles.monthChipActive]}
+                    onPress={() => setSelectedMonth(opt)}
+                  >
+                    <Ionicons
+                      name="calendar-outline"
+                      size={12}
+                      color={isSelected ? Colors.black : Colors.textMuted}
+                    />
+                    <Text style={[styles.monthChipText, isSelected && styles.monthChipTextActive]}>
+                      {opt.label}
+                    </Text>
+                    {opt.isCurrent && (
+                      <View style={[styles.currentMonthDot, isSelected && { backgroundColor: Colors.black }]} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Duration */}
+            <Text style={styles.modalLabel}>Budget Duration</Text>
+            <View style={styles.durationRow}>
+              {DURATION_OPTIONS.map((dur) => {
+                const isSelected = selectedDuration === dur.id;
+                return (
+                  <TouchableOpacity
+                    key={dur.id}
+                    style={[styles.durationChip, isSelected && styles.durationChipActive]}
+                    onPress={() => setSelectedDuration(dur.id)}
+                  >
+                    <Text style={[styles.durationChipText, isSelected && styles.durationChipTextActive]}>
+                      {dur.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
             <TouchableOpacity
               style={[styles.modalSubmitBtn, savingBudget && { opacity: 0.6 }]}
@@ -857,10 +1054,12 @@ export const BudgetsScreen: React.FC = () => {
               {savingBudget ? (
                 <ActivityIndicator color={Colors.black} size="small" />
               ) : (
-                <Text style={styles.modalSubmitBtnText}>Save Budget Cap</Text>
+                <Text style={styles.modalSubmitBtnText}>
+                  {editingBudget ? 'Update Budget Cap' : 'Save Budget Cap'}
+                </Text>
               )}
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
@@ -1153,8 +1352,25 @@ const styles = StyleSheet.create({
   budgetCatRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    flexWrap: 'wrap',
+    gap: 6,
     flex: 1,
+  },
+  budgetMonthBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(56, 189, 248, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.25)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  budgetMonthBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#38BDF8',
   },
   overPill: {
     flexDirection: 'row',
@@ -1571,5 +1787,66 @@ const styles = StyleSheet.create({
     color: '#FCD34D',
     fontSize: 12,
     fontWeight: '500',
+  },
+  monthChipsRow: {
+    gap: 8,
+    paddingVertical: 4,
+  },
+  monthChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 18,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  monthChipActive: {
+    backgroundColor: Colors.white,
+    borderColor: Colors.white,
+  },
+  monthChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  monthChipTextActive: {
+    color: Colors.black,
+    fontWeight: '700',
+  },
+  currentMonthDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#38BDF8',
+  },
+  durationRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 4,
+  },
+  durationChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  durationChipActive: {
+    backgroundColor: Colors.white,
+    borderColor: Colors.white,
+  },
+  durationChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  durationChipTextActive: {
+    color: Colors.black,
+    fontWeight: '700',
   },
 });
